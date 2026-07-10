@@ -48,11 +48,3 @@ uvが入っていない場合はuvをインストール：[Installation | uv](ht
 ```shell
 uv sync
 ```
-
-### 開発環境構築について
-[環境構築について](./README.md#環境構築について)をやった上で、
-Gitなどを入れておく
-
-```shell
-uv sync --dev
-```
