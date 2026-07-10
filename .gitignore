@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local learner data must not be committed.
+data/runtime/*
+!data/runtime/.gitkeep
