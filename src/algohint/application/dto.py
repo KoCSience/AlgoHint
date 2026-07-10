@@ -1,0 +1,47 @@
+"""Learner-safe values returned from application services."""
+
+from dataclasses import dataclass
+
+from algohint.domain.enums import JudgeStatus
+
+
+@dataclass(frozen=True)
+class LearnerProblemView:
+    """Problem detail intentionally excluding hidden tests and model code."""
+
+    problem_id: str
+    title: str
+    level: str
+    tags: tuple[str, ...]
+    learning_goal: str
+    statement: str
+    constraints: str
+    input_format: str
+    output_format: str
+    samples: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class SubmissionView:
+    """Judge result filtered according to testcase visibility."""
+
+    status: JudgeStatus
+    passed_count: int
+    total_count: int
+    message: str
+    sample_input: str | None = None
+    actual_output: str | None = None
+    expected_output: str | None = None
+
+
+@dataclass(frozen=True)
+class LearningReport:
+    """A compact report suitable for both Gradio and future UI adapters."""
+
+    attempted_count: int
+    solved_count: int
+    correctness_rate: float
+    average_hint_count: float
+    average_attempt_count: float
+    weak_tags: tuple[tuple[str, int], ...]
+    recommended_problem_id: str | None

@@ -1,0 +1,5 @@
+[
+  {"case_id": "first", "input_text": "1 -5\n-5\n", "expected_output": "1\n", "visibility": "hidden"},
+  {"case_id": "last", "input_text": "4 8\n1 2 3 8\n", "expected_output": "4\n", "visibility": "hidden"},
+  {"case_id": "duplicate", "input_text": "5 4\n4 1 4 4 2\n", "expected_output": "1\n", "visibility": "hidden"}
+]

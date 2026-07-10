@@ -1,0 +1,4 @@
+[
+  {"case_id": "sample-1", "input_text": "12\n", "expected_output": "mild\n", "visibility": "sample"},
+  {"case_id": "sample-2", "input_text": "-1\n", "expected_output": "cold\n", "visibility": "sample"}
+]

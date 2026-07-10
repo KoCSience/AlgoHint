@@ -1,0 +1,20 @@
+{
+  "problem_id": "l3_frequency_count",
+  "title": "同じ値の組",
+  "difficulty": "easy",
+  "level": "L3",
+  "tags": ["complexity", "dictionary", "counting"],
+  "learning_goal": "値の出現回数を利用して、制約に合う数え上げを考えられる。",
+  "statement": "N 個の整数列 A が与えられます。i < j かつ Ai = Aj を満たす組 (i, j) の個数を出力してください。",
+  "constraints": "1 <= N <= 200000。A の要素は -10^9 以上 10^9 以下。",
+  "input_format": "N\nA1 A2 ... AN",
+  "output_format": "条件を満たす組の個数を一行に出力する。",
+  "hints": [
+    {"level": 1, "category": "understanding", "text": "二つの位置を選んだとき、値が同じなら一組として数えます。同じ値が何回出るかに注目してみましょう。"},
+    {"level": 2, "category": "complexity", "text": "二つの位置をすべて選ぶ方法では、二十万個の入力に対して何回比較することになるか見積もってみましょう。"},
+    {"level": 3, "category": "approach", "text": "左から値を一つ読むとき、同じ値がそれまでに何回出たかが分かれば、新しく増える組数を数えられます。"},
+    {"level": 4, "category": "implementation", "text": "値ごとの回数を記録する入れ物を考えましょう。新しい値を記録する前と後のどちらで組数を増やすかに注意します。"},
+    {"level": 5, "category": "debug", "text": "要素が一つだけ、すべて異なる、すべて同じ、負の値を含む場合で組数を手計算してみましょう。"}
+  ],
+  "explanation": "左から値を読み、その値が過去に現れた回数だけ新しい組が増えます。その後で出現回数を一つ増やします。辞書を使うことで各要素を平均 O(1) で処理でき、全体は O(N) 時間、O(N) メモリです。"
+}

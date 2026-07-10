@@ -1,0 +1,26 @@
+[
+  {
+    "level": "L0",
+    "title": "Python入出力",
+    "description": "標準入力を読み、指定された形式で出力する練習です。",
+    "problem_ids": ["l0_two_values"]
+  },
+  {
+    "level": "L1",
+    "title": "分岐と反復",
+    "description": "条件ごとの処理と繰り返しを、境界を意識して実装します。",
+    "problem_ids": ["l1_value_class", "l1_range_sum"]
+  },
+  {
+    "level": "L2",
+    "title": "基本探索",
+    "description": "配列を先頭から調べ、必要な情報を見つけます。",
+    "problem_ids": ["l2_first_match"]
+  },
+  {
+    "level": "L3",
+    "title": "計算量",
+    "description": "制約から、全探索より効率的な数え方を考えます。",
+    "problem_ids": ["l3_frequency_count"]
+  }
+]

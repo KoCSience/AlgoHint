@@ -1,0 +1,4 @@
+[
+  {"case_id": "zero", "input_text": "0 0\n", "expected_output": "0\n", "visibility": "hidden"},
+  {"case_id": "large", "input_text": "1000000000 -1000000000\n", "expected_output": "0\n", "visibility": "hidden"}
+]

@@ -1,0 +1,20 @@
+{
+  "problem_id": "l1_range_sum",
+  "title": "1からNまでの合計",
+  "difficulty": "beginner",
+  "level": "L1",
+  "tags": ["loop", "boundary"],
+  "learning_goal": "繰り返しの開始・終了を意識して合計を作れる。",
+  "statement": "正の整数 N が与えられます。1 から N までの整数の合計を出力してください。",
+  "constraints": "1 <= N <= 10000",
+  "input_format": "N",
+  "output_format": "合計を一行に出力する。",
+  "hints": [
+    {"level": 1, "category": "understanding", "text": "足し合わせる最初の数と最後の数を確認し、どの値が合計に含まれるか整理してみましょう。"},
+    {"level": 2, "category": "complexity", "text": "最大でも一万回程度の処理です。一つずつ加えても時間内に終わるか見積もってみましょう。"},
+    {"level": 3, "category": "approach", "text": "合計を入れる変数を用意し、対象の値を順に加える流れを考えてみましょう。"},
+    {"level": 4, "category": "implementation", "text": "繰り返しの終点が N を含むかどうかを確認しましょう。合計の初期値も重要です。"},
+    {"level": 5, "category": "debug", "text": "N が 1 と 2 のときに何回加算されるかを追って、端の値が抜けていないか確認しましょう。"}
+  ],
+  "explanation": "合計を0から始め、1からNまでを一つずつ加えます。繰り返し回数はN回なので時間計算量は O(N)、追加メモリは O(1) です。"
+}

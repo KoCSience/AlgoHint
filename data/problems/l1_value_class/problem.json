@@ -1,0 +1,20 @@
+{
+  "problem_id": "l1_value_class",
+  "title": "温度の分類",
+  "difficulty": "beginner",
+  "level": "L1",
+  "tags": ["condition", "boundary"],
+  "learning_goal": "条件の境目を含めて、三つの分類を実装できる。",
+  "statement": "整数 T が与えられます。T が 0 未満なら cold、0 以上 30 以下なら mild、31 以上なら hot を出力してください。",
+  "constraints": "-100 <= T <= 100",
+  "input_format": "T",
+  "output_format": "分類名を小文字一語で出力する。",
+  "hints": [
+    {"level": 1, "category": "understanding", "text": "入力の値を三つの範囲のどれか一つへ分類する問題です。各範囲の端を紙に書いてみましょう。"},
+    {"level": 2, "category": "complexity", "text": "判定は一つの値に対して数回行うだけです。範囲の重なりや抜けがないことが重要です。"},
+    {"level": 3, "category": "approach", "text": "小さい範囲から順に判定すると、上限だけを確認する場面を作れます。条件の順番を考えてみましょう。"},
+    {"level": 4, "category": "implementation", "text": "0、30、31 は異なる分類になる境目です。比較演算子が境界を含んでいるか確認しましょう。"},
+    {"level": 5, "category": "debug", "text": "負の値、0、30、31 をそれぞれ入力したときの分類を手で確認してみましょう。"}
+  ],
+  "explanation": "値を小さい側から確認すれば、最初に 0 未満を分け、次に 30 以下を分け、残りを最後の分類にできます。条件は定数回だけ評価するため時間計算量は O(1) です。"
+}

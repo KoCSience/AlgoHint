@@ -1,0 +1,5 @@
+[
+  {"case_id": "zero", "input_text": "0\n", "expected_output": "mild\n", "visibility": "hidden"},
+  {"case_id": "thirty", "input_text": "30\n", "expected_output": "mild\n", "visibility": "hidden"},
+  {"case_id": "thirty-one", "input_text": "31\n", "expected_output": "hot\n", "visibility": "hidden"}
+]

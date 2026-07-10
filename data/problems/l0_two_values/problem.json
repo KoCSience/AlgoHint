@@ -1,0 +1,20 @@
+{
+  "problem_id": "l0_two_values",
+  "title": "二つの数の合計",
+  "difficulty": "beginner",
+  "level": "L0",
+  "tags": ["input", "output", "type-conversion"],
+  "learning_goal": "空白区切りの整数を読み取り、整数として計算して出力できる。",
+  "statement": "一行に二つの整数 A, B が空白区切りで与えられます。A+B を出力してください。",
+  "constraints": "-10^9 <= A, B <= 10^9",
+  "input_format": "A B",
+  "output_format": "A+B を一行に出力する。",
+  "hints": [
+    {"level": 1, "category": "understanding", "text": "入力として受け取る値と、最終的に一行へ出す値を言葉で整理してみましょう。"},
+    {"level": 2, "category": "complexity", "text": "扱う数は二つだけです。処理の速さより、文字列を数として扱えているかを確認しましょう。"},
+    {"level": 3, "category": "approach", "text": "一行を空白で区切ると、二つの要素として扱えます。計算の前に数値型へ変換する必要があるか考えましょう。"},
+    {"level": 4, "category": "implementation", "text": "入力の改行は読み取り時に意識しすぎなくて大丈夫です。区切った要素が二つあることを確認しましょう。"},
+    {"level": 5, "category": "debug", "text": "負の値を含む小さな例を手計算し、文字列をつないでしまっていないか確認してみましょう。"}
+  ],
+  "explanation": "二つの値を整数として受け取り、一度だけ加算します。必要な計算量は O(1)、追加メモリも O(1) です。入力は文字列なので、計算前に数値として扱うことが重要です。"
+}
