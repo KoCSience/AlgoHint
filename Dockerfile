@@ -11,7 +11,6 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/algohint/.venv
 
@@ -39,6 +38,8 @@ USER algohint
 CMD ["sleep", "infinity"]
 
 FROM base AS builder
+
+ENV UV_COMPILE_BYTECODE=1
 
 WORKDIR /opt/algohint
 COPY --chown=algohint:algohint pyproject.toml uv.lock README.md ./

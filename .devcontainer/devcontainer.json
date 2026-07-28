@@ -12,9 +12,19 @@
     ],
     "containerEnv": {
         "UV_PROJECT_ENVIRONMENT": "/workspace/.venv",
+        "UV_CACHE_DIR": "/tmp/algohint-uv-cache",
+        "RUFF_CACHE_DIR": "/tmp/algohint-ruff-cache",
+        "MYPY_CACHE_DIR": "/tmp/algohint-mypy-cache",
         "GRADIO_ANALYTICS_ENABLED": "False"
     },
     "remoteUser": "algohint",
+    "updateRemoteUserUID": true,
+    "runArgs": [
+        "--cpus=1",
+        "--memory=1g",
+        "--memory-swap=1536m",
+        "--pids-limit=256"
+    ],
     "postCreateCommand": "uv sync --frozen",
     "forwardPorts": [
         7860
