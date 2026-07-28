@@ -94,6 +94,33 @@ VS Codeが転送したポート7860から画面を開きます。開発コンテ
 
 品質検査は上記の順番で逐次実行してください。メモリの小さいWSL環境では、pytest、Ruff、mypyを別コンテナで同時実行すると、依存読み込みとbytecode生成が重なり、VS Codeが応答しなくなることがあります。
 
+### `.venv`ボリュームの権限エラー
+
+Dev ContainersはLinux／WSL上で`algohint`ユーザーのUID/GIDをホストユーザーに合わせますが、既存の名前付きボリュームに記録された数値の所有者は自動変更されません。たとえばコンテナユーザーが1000、`algohint-dev-venv`が10001のままだと、`uv`は次のエラーで停止します。
+
+この挙動と非rootユーザーでボリューム所有権を補正する方法は、VS Codeの[非rootユーザー設定ガイド](https://code.visualstudio.com/remote/advancedcontainers/add-nonroot-user)にも記載されています。
+
+```text
+error: failed to open file `/workspace/.venv/CACHEDIR.TAG`: Permission denied
+```
+
+コンテナ内で実効ユーザーとボリュームの所有者を確認できます。
+
+```bash
+id
+stat -c '%u:%g %a %n' /workspace/.venv
+```
+
+通常はVS Codeのコマンドパレットから`Dev Containers: Rebuild Container`を実行してください。初回の`postCreateCommand`が所有権の不一致だけを補正してから`uv sync --frozen`を実行します。所有権が一致している場合は、WSLへの負荷を避けるため再帰的な補正を省略します。
+
+Rebuild Containerでも復旧せず、インストール済みの開発依存を破棄してよい場合だけ、VS Codeで`Dev Containers: Reopen Folder Locally`を実行した後に次のボリュームを削除します。
+
+```bash
+docker volume rm algohint-dev-venv
+```
+
+これは開発用仮想環境だけを削除し、次回のRebuild Containerで再作成します。プロフィールと学習履歴を持つ`algohint-runtime`は削除しないでください。
+
 ## データの管理
 
 永続化するデータは`/opt/algohint/data/runtime`だけです。教材はイメージに含まれ、コンテナ実行中には変更しません。

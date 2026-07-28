@@ -20,3 +20,7 @@
 - [ ] 通常モード停止後、明示的な教師モード起動でのみ教師タブが表示される。
 - [ ] Dev Container作成後、pytest、Ruff、mypyとGradio起動を実行できる。
 - [ ] Dev ContainerのCPU、メモリ、Swap、PID上限が有効で、品質検査を逐次実行してもWSLのSwapを枯渇させない。
+- [ ] UID 1000のDev Containerで、所有者10001の`.venv`ボリュームが初回`postCreateCommand`により1000へ補正される。
+- [ ] 補正後に`CACHEDIR.TAG`を作成でき、`uv sync --frozen`が成功する。
+- [ ] 同じボリュームで再作成した場合は所有権補正を省略し、依存環境を再利用できる。
+- [ ] 想定外の`UV_PROJECT_ENVIRONMENT`は依存同期や権限変更を行わずエラー終了する。
