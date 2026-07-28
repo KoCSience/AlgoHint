@@ -27,8 +27,10 @@ class SubprocessExecutor:
     """Execute a submission with modest local limits, never as a public sandbox.
 
     ``python -I`` and a temporary working directory reduce accidental access to
-    the application environment. They do not provide complete isolation, hence
-    the explicit local-only operating boundary documented by the application.
+    the application environment. Even when AlgoHint itself runs in Docker, the
+    submission shares that application container and can reach its readable
+    files. These limits therefore support trusted local learning; they are not a
+    per-submission security boundary for untrusted public users.
     """
 
     @staticmethod
