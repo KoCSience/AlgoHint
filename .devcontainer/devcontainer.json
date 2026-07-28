@@ -1,0 +1,44 @@
+{
+    "name": "AlgoHint Development",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": "..",
+        "target": "development"
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "workspaceFolder": "/workspace",
+    "mounts": [
+        "source=algohint-dev-venv,target=/workspace/.venv,type=volume"
+    ],
+    "containerEnv": {
+        "UV_PROJECT_ENVIRONMENT": "/workspace/.venv",
+        "GRADIO_ANALYTICS_ENABLED": "False"
+    },
+    "remoteUser": "algohint",
+    "postCreateCommand": "uv sync --frozen",
+    "forwardPorts": [
+        7860
+    ],
+    "portsAttributes": {
+        "7860": {
+            "label": "AlgoHint Gradio",
+            "onAutoForward": "notify"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+                "python.testing.pytestEnabled": true,
+                "python.testing.pytestArgs": [
+                    "tests"
+                ]
+            }
+        }
+    }
+}
