@@ -27,10 +27,14 @@ FROM base AS development
 
 USER root
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends git \
+    && apt-get install --yes --no-install-recommends git sudo \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir --parents /workspace/.venv \
-    && chown --recursive algohint:algohint /workspace
+    && chown --recursive algohint:algohint /workspace \
+    && printf '%s\n' 'algohint ALL=(root) NOPASSWD: /usr/bin/chown' \
+        > /etc/sudoers.d/algohint-venv \
+    && chmod 0440 /etc/sudoers.d/algohint-venv \
+    && visudo --check --file=/etc/sudoers.d/algohint-venv
 
 WORKDIR /workspace
 USER algohint

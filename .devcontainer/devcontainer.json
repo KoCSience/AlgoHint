@@ -25,7 +25,7 @@
         "--memory-swap=1536m",
         "--pids-limit=256"
     ],
-    "postCreateCommand": "uv sync --frozen",
+    "postCreateCommand": "/bin/sh .devcontainer/post-create.sh",
     "forwardPorts": [
         7860
     ],
