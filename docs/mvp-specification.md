@@ -13,4 +13,4 @@ AlgoHint Coach は、ローカルまたはColab上で個人が使うPythonアル
 | CE | 構文などのコンパイル段階のエラー |
 | IE | Judge側の予期しない問題 |
 
-Docker隔離、ユーザー認証、外部OJ提出、外部LLM接続、Flet UIはMVPの対象外です。
+ローカル実行を再現するDocker／Dev Container環境はMVPに含みます。提出ごとの強固なコンテナ隔離、公開運用、ユーザー認証、外部OJ提出、外部LLM接続、Flet UIはMVPの対象外です。
