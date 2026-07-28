@@ -1,0 +1,31 @@
+name: algohint
+
+services:
+  app:
+    image: algohint:local
+    build:
+      context: .
+      target: runtime
+    init: true
+    restart: unless-stopped
+    ports:
+      # Keep arbitrary-code execution reachable from this computer only.
+      - "127.0.0.1:7860:7860"
+    volumes:
+      - runtime-data:/opt/algohint/data/runtime
+    read_only: true
+    tmpfs:
+      # Judge source, bytecode, and Gradio's transient files must not persist.
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    stop_grace_period: 10s
+
+volumes:
+  runtime-data:
+    name: algohint-runtime
