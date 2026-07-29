@@ -4,6 +4,7 @@ import gradio as gr
 
 from algohint.ui.formatters import format_hint, format_problem, format_report, format_submission
 from algohint.ui.view_models import ApplicationServices
+from algohint.domain.enums import SubmissionMode
 
 
 def _format_curriculum_item(item: dict[str, object]) -> str:
@@ -23,24 +24,36 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
     profiles = services.profiles.list_profiles()
     profile_choices = [(profile.display_name, profile.profile_id) for profile in profiles]
     problems = services.problems.list_problems()
-    problem_choices = [(f"{problem.level} | {problem.title}", problem.problem_id) for problem in problems]
-    safety_note = "⚠️ 共有リンクでは任意コードが実行されます。信頼できる個人利用に限定してください。" if shared_mode else "ローカル個人学習用です。任意コード実行のため公開サーバーでは利用しないでください。"
+    problem_choices = [
+        (f"{problem.level} | {problem.title}", problem.problem_id) for problem in problems
+    ]
+    safety_note = (
+        "⚠️ 共有リンクでは任意コードが実行されます。信頼できる個人利用に限定してください。"
+        if shared_mode
+        else "ローカル個人学習用です。任意コード実行のため公開サーバーでは利用しないでください。"
+    )
 
     with gr.Blocks(title="AlgoHint Coach") as app:
         gr.Markdown("# AlgoHint Coach\n\n自分で考えるための段階的ヒント付きアルゴリズム練習")
         gr.Markdown(safety_note)
         if teacher_mode:
-            gr.Markdown("教師モードが有効です。秘匿データは教師が管理する環境でだけ確認してください。")
+            gr.Markdown(
+                "教師モードが有効です。秘匿データは教師が管理する環境でだけ確認してください。"
+            )
 
         with gr.Row():
             profile_selector = gr.Dropdown(
-                choices=profile_choices, label="プロフィール", value=profile_choices[0][1] if profiles else None
+                choices=profile_choices,
+                label="プロフィール",
+                value=profile_choices[0][1] if profiles else None,
             )
             profile_name = gr.Textbox(label="新しいプロフィール名", max_length=40)
             create_profile = gr.Button("プロフィールを作成")
 
         with gr.Tab("学習ロードマップ"):
-            roadmap = "\n\n".join(_format_curriculum_item(item) for item in services.problems.curriculum())
+            roadmap = "\n\n".join(
+                _format_curriculum_item(item) for item in services.problems.curriculum()
+            )
             gr.Markdown(roadmap)
 
         with gr.Tab("問題演習"):
@@ -78,15 +91,26 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             if not display_name.strip():
                 return gr.Dropdown(), "プロフィール名を入力してください。"
             profile = services.profiles.create_profile(display_name)
-            choices = [(item.display_name, item.profile_id) for item in services.profiles.list_profiles()]
-            return gr.Dropdown(choices=choices, value=profile.profile_id), f"{profile.display_name} を選択しました。"
+            choices = [
+                (item.display_name, item.profile_id) for item in services.profiles.list_profiles()
+            ]
+            return gr.Dropdown(
+                choices=choices, value=profile.profile_id
+            ), f"{profile.display_name} を選択しました。"
 
-        def submit(profile_id: str | None, problem_id: str | None, source: str, samples_only: bool):
+        def submit(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+            mode: SubmissionMode,
+        ):
             if not profile_id or not problem_id:
                 return "プロフィールと問題を選択してください。"
             if not source.strip():
                 return "提出するPythonコードを入力してください。"
-            return format_submission(services.submissions.submit(profile_id, problem_id, source, samples_only))
+            return format_submission(
+                services.submissions.submit(profile_id, problem_id, source, mode)
+            )
 
         def next_hint(profile_id: str | None, problem_id: str | None):
             if not profile_id or not problem_id:
@@ -106,19 +130,27 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return "プロフィールを選択してください。"
             return format_report(services.reports.report(profile_id))
 
-        problem_selector.change(selected_problem, inputs=problem_selector, outputs=[problem_header, problem_body])
-        create_profile.click(created_profile, inputs=profile_name, outputs=[profile_selector, report_result])
+        problem_selector.change(
+            selected_problem, inputs=problem_selector, outputs=[problem_header, problem_body]
+        )
+        create_profile.click(
+            created_profile, inputs=profile_name, outputs=[profile_selector, report_result]
+        )
         sample_submit.click(
-            lambda profile, problem, source: submit(profile, problem, source, True),
+            lambda profile, problem, source: submit(
+                profile, problem, source, SubmissionMode.SAMPLE
+            ),
             inputs=[profile_selector, problem_selector, code],
             outputs=submission_result,
         )
         full_submit.click(
-            lambda profile, problem, source: submit(profile, problem, source, False),
+            lambda profile, problem, source: submit(profile, problem, source, SubmissionMode.FULL),
             inputs=[profile_selector, problem_selector, code],
             outputs=submission_result,
         )
-        request_hint.click(next_hint, inputs=[profile_selector, problem_selector], outputs=hint_result)
+        request_hint.click(
+            next_hint, inputs=[profile_selector, problem_selector], outputs=hint_result
+        )
         give_up.click(
             lambda profile, problem: show_explanation(profile, problem, True),
             inputs=[profile_selector, problem_selector],
@@ -127,6 +159,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         refresh_report.click(show_report, inputs=profile_selector, outputs=report_result)
 
         if teacher_mode:
+
             def show_teacher(problem_id: str | None):
                 if not problem_id:
                     return "問題を選択してください。"

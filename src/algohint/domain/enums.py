@@ -35,3 +35,10 @@ class CompareMode(StrEnum):
     """Supported output comparisons; MVP intentionally exposes only trim."""
 
     TRIM = "trim"
+
+
+class SubmissionMode(StrEnum):
+    """Select public samples or the complete learner-safe judge flow."""
+
+    SAMPLE = "sample"
+    FULL = "full"

@@ -28,10 +28,25 @@ class SubmissionView:
     status: JudgeStatus
     passed_count: int
     total_count: int
+    elapsed_ms: int | None
     message: str
+    diagnostic: "LearnerDiagnostic | None" = None
     sample_input: str | None = None
     actual_output: str | None = None
     expected_output: str | None = None
+
+
+@dataclass(frozen=True)
+class LearnerDiagnostic:
+    """Actionable failure detail that has crossed the hidden-case trust boundary."""
+
+    status: JudgeStatus
+    summary: str
+    source_line: int | None = None
+    source_column: int | None = None
+    details: str | None = None
+    redacted: bool = False
+    diagnostic_id: str | None = None
 
 
 @dataclass(frozen=True)

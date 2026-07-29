@@ -3,7 +3,8 @@
 from datetime import UTC, datetime
 
 from algohint.application.dto import SubmissionView
-from algohint.domain.enums import JudgeStatus, TestVisibility
+from algohint.application.learner_diagnostic_policy import LearnerDiagnosticPolicy
+from algohint.domain.enums import JudgeStatus, SubmissionMode, TestVisibility
 from algohint.domain.models import JudgePolicy, LearningLog, ProblemProgress
 from algohint.domain.ports import JudgeRunner, LearningLogRepository, ProblemRepository
 
@@ -17,11 +18,13 @@ class SubmissionService:
         logs: LearningLogRepository,
         judge: JudgeRunner,
         policy: JudgePolicy | None = None,
+        diagnostic_policy: LearnerDiagnosticPolicy | None = None,
     ) -> None:
         self._problems = problems
         self._logs = logs
         self._judge = judge
         self._policy = policy or JudgePolicy()
+        self._diagnostic_policy = diagnostic_policy or LearnerDiagnosticPolicy()
 
     @staticmethod
     def _updated_log(log: LearningLog, problem_id: str, status: JudgeStatus) -> LearningLog:
@@ -34,15 +37,21 @@ class SubmissionService:
                 + (0 if status is JudgeStatus.AC else 1),
                 "solved": solved,
                 "last_status": status,
-                "completed_at": datetime.now(UTC) if solved and not current.solved else current.completed_at,
+                "completed_at": datetime.now(UTC)
+                if solved and not current.solved
+                else current.completed_at,
             }
         )
         return log.model_copy(update={"progress": {**log.progress, problem_id: progress}})
 
     def submit(
-        self, profile_id: str, problem_id: str, source: str, samples_only: bool = False
+        self,
+        profile_id: str,
+        problem_id: str,
+        source: str,
+        mode: SubmissionMode = SubmissionMode.FULL,
     ) -> SubmissionView:
-        cases = self._problems.get_tests(problem_id, include_hidden=not samples_only)
+        cases = self._problems.get_tests(problem_id, include_hidden=mode is SubmissionMode.FULL)
         result = self._judge.judge(source, cases, self._policy)
         log = self._logs.load_log(profile_id)
         self._logs.save_log(self._updated_log(log, problem_id, result.status))
@@ -60,7 +69,9 @@ class SubmissionService:
             status=result.status,
             passed_count=result.passed_count,
             total_count=result.total_count,
+            elapsed_ms=result.elapsed_ms,
             message=message,
+            diagnostic=self._diagnostic_policy.create(result, self._policy),
             sample_input=failed.input_text if reveal_sample and failed is not None else None,
             actual_output=result.stdout
             if reveal_sample and failed is not None and result.status is JudgeStatus.WA
