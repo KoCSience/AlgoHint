@@ -151,6 +151,14 @@ class TutorService:
         self._problems.get_problem(problem_id)
         self._sessions.clear(profile_id, problem_id)
 
+    def provider_availability(self, provider_id: HintProviderId) -> ProviderAvailability:
+        """Expose only safe readiness metadata for the settings UI."""
+
+        provider = self._providers.get(provider_id)
+        if provider is None:
+            return ProviderAvailability(available=False, reason="プロバイダが登録されていません。")
+        return provider.availability()
+
     def _generate(
         self,
         selected: HintProvider | None,

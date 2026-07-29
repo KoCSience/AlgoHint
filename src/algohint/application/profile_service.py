@@ -38,6 +38,14 @@ class ProfileService:
         self._ensure_log(profile.profile_id)
         return profile
 
+    def get_profile(self, profile_id: str) -> Profile:
+        """Return profile metadata for UI preference synchronization."""
+
+        profile = self._profiles.get_profile(profile_id)
+        if profile.is_development and not self._development_mode:
+            raise KeyError("Unknown profile")
+        return profile
+
     def default_profile(self) -> Profile | None:
         """Return the reserved development identity or the first normal profile."""
 

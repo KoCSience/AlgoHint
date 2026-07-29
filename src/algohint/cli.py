@@ -5,16 +5,21 @@ from pathlib import Path
 
 from algohint.application.config import AppConfig
 from algohint.application.explanation_service import ExplanationService
-from algohint.application.hint_service import HintService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
 from algohint.application.submission_service import SubmissionService
+from algohint.application.tutor_service import TutorService
 from algohint.infrastructure.filesystem_paths import DataPaths
+from algohint.infrastructure.hint_provider_factory import build_hint_providers
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
+from algohint.infrastructure.json_tutor_session_repository import (
+    JsonTutorSessionRepository,
+)
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
+from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
 from algohint.ui.gradio_app import build_app
 from algohint.ui.view_models import ApplicationServices
 
@@ -50,6 +55,8 @@ def main() -> None:
     problems = JsonProblemRepository(paths)
     profile_repository = JsonProfileRepository(paths)
     logs = JsonLearningLogRepository(paths, profile_repository)
+    tutor_sessions = JsonTutorSessionRepository(paths)
+    providers = build_hint_providers(config)
     services = ApplicationServices(
         profiles=ProfileService(
             profile_repository,
@@ -59,7 +66,14 @@ def main() -> None:
         ),
         problems=ProblemService(problems),
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
-        hints=HintService(problems, logs),
+        tutor=TutorService(
+            problems,
+            profile_repository,
+            logs,
+            tutor_sessions,
+            providers,
+            RuleBasedHintProvider(),
+        ),
         explanations=ExplanationService(problems, logs),
         reports=LearningReportService(problems, logs),
         teacher_repository=problems,
