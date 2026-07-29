@@ -10,6 +10,9 @@
 - [ ] プロフィールごとにGPT-5.6、Gemma 4 12B、Geminiの選択が保存される。
 - [ ] キー未設定またはプロバイダ障害でも起動とJudgeは成功し、RuleBasedヒントへ退避する。
 - [ ] Gemini障害時に認証、モデル、利用上限、タイムアウト、応答形式の安全化した原因と対処が表示される。
+- [ ] Gemini生成とdoctorは処理完了まで親SDKクライアントを保持し、正常・API例外・応答検証失敗の後に1回だけcloseする。
+- [ ] close失敗は正常なヒントまたは主要例外を上書きせず、早期closeは`client_lifecycle_error`としてRuleBasedへ退避する。
+- [ ] 連続2回のGeminiヒント要求が成功し、`Cannot send a request, as the client has been closed`が発生しない。
 - [ ] `algohint doctor --provider gemini`が問題文やコードを送らず、成功時`0`、失敗時`1`を返す。
 - [ ] productionのdoctor、UI、ログにAPIキー、プロンプト、コード、生レスポンスが表示されない。
 - [ ] developmentの`doctor --verbose`とGeminiエラーログに例外トレースが表示され、APIキーと認証ヘッダーは`[REDACTED]`になる。
@@ -22,6 +25,19 @@
 - [ ] ギブアップ後に解説が表示され、模範コードは通常画面に表示されない。
 - [ ] レポートがプロフィール別に分離される。
 - [ ] 教師モードでは隠しテストと模範解答を確認できる。
+
+## ヒントE2E
+
+- [ ] 通常の`uv run pytest`はChromium未導入環境でも成功し、ブラウザE2Eだけをskipする。
+- [ ] Gradio API E2Eで問題・Gemini選択、未同意拒否、質問、「わからない」、実行結果ヒント、履歴消去が成功する。
+- [ ] Playwright E2Eで同じ操作を実クリックでき、RE診断が実行結果ヒントへ渡る。
+- [ ] Playwright実行中にconsole error、HTTP 4xx/5xx、想定外の通信失敗がない。
+- [ ] Playwright失敗時のtraceとスクリーンショットを`/tmp/algohint-e2e/`へ保存し、秘密情報を含まないことを確認できる。
+- [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。
+- [ ] 実Geminiのヒントとprovider/modelが画面に表示され、RuleBasedフォールバックがない。
+- [ ] Chrome MCPで画面、console、ブラウザからGradioへのnetworkを確認し、Gemini側はサーバーログと突き合わせる。
+- [ ] APIキー、認証ヘッダー、credentials内容がログ、trace、screenshotへ出ない。
+- [ ] READMEからE2EとChrome MCPの前提、導入、確認、障害対応、無効化・削除手順へ到達できる。
 
 ## Docker
 

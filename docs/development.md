@@ -20,6 +20,10 @@ uv run mypy src
 uv lock --check
 ```
 
+ヒント機能を変更した場合は、通常テストに加えてGradio API E2Eと、明示的に有効化する
+Playwright E2Eを実行します。Chrome DevTools MCPを含む検出範囲、導入、実行順序、
+失敗成果物は[E2Eデバッグガイド](e2e-debugging.md)を参照してください。
+
 リリース前はロック済みruntime依存を一時ファイルへ書き出して監査します。
 
 ```bash
@@ -153,6 +157,7 @@ Vertex AI／Enterpriseのアクセストークン認証へ切り替えません�
 | `provider_unavailable` | Gemini側の一時障害 | 時間を置き、サービス状態を確認する |
 | `empty_or_blocked_response` | 空応答または安全設定によるブロック | 質問内容を見直し、再試行する |
 | `invalid_structured_response` | 応答JSONが共通スキーマ不適合 | SDK・モデル互換性を確認する |
+| `client_lifecycle_error` | SDKクライアントが通信完了前に閉じられた | 依存ロックを確認し、再現時はバグとして報告する |
 | `unknown_provider_error` | 上記以外 | development詳細診断でSDK例外を確認する |
 
 productionログにはprovider、model、reason_code、HTTPステータス、再試行可能性、
@@ -174,6 +179,13 @@ ALGOHINT_ENV=development uv run algohint doctor --provider gemini --verbose
 詳細にはGoogle SDKが返した応答エラーが含まれることがあるため、共有前に内容を確認して
 ください。AlgoHintから問題文、提出コード、プロンプトを追加でログ出力することは
 ありません。developmentログをproduction環境で有効にしないでください。
+
+Geminiアダプタは、生成応答の`text`取得またはdoctorのモデル情報取得が完了するまで
+親SDKクライアントを強参照し、その後に1回だけ明示的にcloseします。close自体の失敗は
+正常なヒントや主要例外を上書きしません。`client_lifecycle_error`または
+`Cannot send a request, as the client has been closed`が再発した場合は、
+[E2Eデバッグガイド](e2e-debugging.md)の偽プロバイダ回帰、doctor、実API 1要求の順で
+切り分けてください。
 
 | 用途                  | 環境変数                                      | 秘密               |
 | --------------------- | --------------------------------------------- | ------------------ |

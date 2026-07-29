@@ -82,6 +82,11 @@ uv run mypy src
 uv lock --check
 ```
 
+ヒント機能はGradio API、Playwright、Chrome DevTools MCPの三層で確認します。
+ブラウザ導入、実行コマンド、実Geminiを1要求だけ使う最終確認は
+[E2Eデバッグガイド](docs/e2e-debugging.md)、Codexへ隔離Chromeを接続する手順は
+[Chrome DevTools MCP導入ガイド](docs/chrome-devtools-mcp.md)を参照してください。
+
 ### 環境構築について
 
 uvが入っていない場合はuvをインストール：[Installation | uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer)

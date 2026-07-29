@@ -50,3 +50,22 @@ HTTPステータス、再試行可能性、例外クラスだけを記録しま�
 ではありません。また、コンテナ環境変数はDocker管理権限を持つ利用者が確認できます。
 LLMキーを渡した状態で信頼できないコードを実行しないでください。この制約を解消するには、
 Judgeをキーのない別ユーザー／別コンテナへ分離する必要があります。
+
+## ブラウザMCP利用時の信頼境界
+
+Chrome DevTools MCPは、操作対象ブラウザの画面、DOM、console、Cookieを含み得る
+ブラウザ状態、ブラウザとGradio間のnetwork情報へアクセスします。AlgoHint専用の
+`--isolated`ブラウザを使い、通常Chromeプロフィール、メール、クラウド管理画面、
+学校・職場システムを同じブラウザへ開かないでください。usage statisticsとCrUX連携も
+無効化します。
+
+APIキーはブラウザへ入力せず、AlgoHint起動プロセスの環境変数だけに渡します。
+Chrome MCPからはGradioバックエンドとGemini間のserver-to-server通信を直接確認できない
+ため、Gemini側は安全化されたサーバーログとdoctorで確認します。リモートデバッグポートを
+使う場合は`127.0.0.1`だけで待ち受け、LAN、共有ホスト、公開コンテナポートへ露出させては
+いけません。
+
+screenshot、snapshot、console、network、Playwright traceには学習内容や入力コードが
+含まれ得ます。外部共有前に内容を確認し、実API検証後の成果物は不要になった時点で
+削除してください。導入、接続、無効化は
+[Chrome DevTools MCP導入ガイド](chrome-devtools-mcp.md)を参照してください。
