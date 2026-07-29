@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from algohint.domain.enums import JudgeStatus
+from algohint.domain.models import GeneratedHint, TutorSession
 
 
 @dataclass(frozen=True)
@@ -60,3 +61,12 @@ class LearningReport:
     average_attempt_count: float
     weak_tags: tuple[tuple[str, int], ...]
     recommended_problem_id: str | None
+
+
+@dataclass(frozen=True)
+class TutorReply:
+    """One displayed hint plus the persisted, source-free conversation."""
+
+    hint: GeneratedHint
+    session: TutorSession
+    source_omitted: bool = False

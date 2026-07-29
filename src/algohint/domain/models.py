@@ -12,8 +12,10 @@ from algohint.domain.enums import (
     CompareMode,
     HintCategory,
     HintProviderId,
+    HintTrigger,
     JudgeStatus,
     TestVisibility,
+    TutorRole,
 )
 
 
@@ -94,6 +96,66 @@ class LLMResponse(FrozenModel):
 
     text: str
     provider: str
+
+
+class TutorMessage(FrozenModel):
+    """One persisted question or displayed hint, never learner source code."""
+
+    role: TutorRole
+    text: str = Field(min_length=1, max_length=1_200)
+    created_at: datetime
+    trigger: HintTrigger | None = None
+    provider: str | None = None
+    model_name: str | None = None
+
+
+class TutorSession(FrozenModel):
+    """Bounded, problem-scoped conversation retained for one profile."""
+
+    profile_id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    messages: tuple[TutorMessage, ...] = Field(default=(), max_length=40)
+
+
+class ProviderAvailability(FrozenModel):
+    """Safe readiness metadata used by routing and the settings UI."""
+
+    available: bool
+    reason: str | None = None
+    sends_data_off_device: bool = False
+
+
+class HintGenerationRequest(FrozenModel):
+    """Provider-neutral context containing learner-safe instructional data only."""
+
+    learner_key: str = Field(pattern=r"^[a-f0-9]{64}$")
+    problem_id: str
+    title: str
+    statement: str
+    constraints: str
+    learning_goal: str
+    tags: tuple[str, ...]
+    authored_hint: Hint
+    hint_count: int = Field(ge=0)
+    trigger: HintTrigger
+    question: str | None = Field(default=None, max_length=1_000)
+    source_code: str | None = Field(default=None, max_length=16_384)
+    judge_status: JudgeStatus | None = None
+    diagnostic_summary: str | None = None
+    diagnostic_details: str | None = Field(default=None, max_length=4_096)
+    released_explanation: str | None = None
+    history: tuple[TutorMessage, ...] = Field(default=(), max_length=40)
+
+
+class GeneratedHint(FrozenModel):
+    """Validated provider output ready for answer-leak inspection."""
+
+    text: str = Field(min_length=1, max_length=1_200)
+    category: HintCategory
+    provider: str
+    model_name: str
+    used_fallback: bool = False
+    fallback_reason: str | None = None
 
 
 class ProfilePreferences(FrozenModel):

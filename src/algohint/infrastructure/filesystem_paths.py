@@ -28,3 +28,9 @@ class DataPaths:
     @property
     def logs_dir(self) -> Path:
         return self.runtime_dir / "learning_logs"
+
+    @property
+    def tutor_sessions_dir(self) -> Path:
+        """Keep free-form tutoring text separate from aggregate progress."""
+
+        return self.runtime_dir / "tutor_sessions"

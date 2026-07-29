@@ -3,6 +3,8 @@
 from typing import Protocol
 
 from algohint.domain.models import (
+    GeneratedHint,
+    HintGenerationRequest,
     JudgePolicy,
     JudgeResult,
     LLMRequest,
@@ -11,7 +13,10 @@ from algohint.domain.models import (
     Problem,
     Profile,
     ProfilePreferences,
+    ProviderAvailability,
     TestCase,
+    TutorMessage,
+    TutorSession,
 )
 
 
@@ -47,6 +52,33 @@ class ProfileRepository(Protocol):
     def create_profile(self, display_name: str, preferences: ProfilePreferences) -> Profile: ...
 
     def save_profile(self, profile: Profile) -> None: ...
+
+
+class TutorSessionRepository(Protocol):
+    """Persist bounded conversations separately from aggregate learning logs."""
+
+    def load(self, profile_id: str, problem_id: str) -> TutorSession: ...
+
+    def save(self, session: TutorSession) -> None: ...
+
+    def append(
+        self,
+        profile_id: str,
+        problem_id: str,
+        messages: tuple[TutorMessage, ...],
+        *,
+        limit: int,
+    ) -> TutorSession: ...
+
+    def clear(self, profile_id: str, problem_id: str) -> None: ...
+
+
+class HintProvider(Protocol):
+    """Generate one structured hint without judging or executing learner code."""
+
+    def availability(self) -> ProviderAvailability: ...
+
+    def generate(self, request: HintGenerationRequest) -> GeneratedHint: ...
 
 
 class JudgeRunner(Protocol):

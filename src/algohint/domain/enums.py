@@ -50,3 +50,18 @@ class HintProviderId(StrEnum):
     OPENAI = "openai"
     GEMMA = "gemma"
     GEMINI = "gemini"
+
+
+class HintTrigger(StrEnum):
+    """The learner action that requested adaptive coaching."""
+
+    STUCK = "stuck"
+    QUESTION = "question"
+    JUDGE_RESULT = "judge_result"
+
+
+class TutorRole(StrEnum):
+    """Persisted roles in a problem-scoped tutoring conversation."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
