@@ -34,3 +34,9 @@ class DataPaths:
         """Keep free-form tutoring text separate from aggregate progress."""
 
         return self.runtime_dir / "tutor_sessions"
+
+    @property
+    def review_history_dir(self) -> Path:
+        """Use one bounded SQLite database per profile for detailed review history."""
+
+        return self.runtime_dir / "review_history"

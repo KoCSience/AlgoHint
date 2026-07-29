@@ -16,6 +16,7 @@ from algohint.domain.enums import (
     JudgeStatus,
     ProviderFailureReason,
     QuizTopic,
+    ReviewHistoryKind,
     TestVisibility,
     TutorRole,
 )
@@ -255,3 +256,45 @@ class ReviewMaterial(FrozenModel):
         topics = {question.topic for question in self.questions}
         if topics != set(QuizTopic):
             raise ValueError("Review material must contain every quiz topic exactly once")
+
+
+class StoredQuizFeedback(FrozenModel):
+    """Snapshot that remains meaningful after authored material changes."""
+
+    question_id: str
+    prompt: str
+    selected_option_id: str
+    selected_text: str
+    correct_option_id: str
+    correct_text: str
+    correct: bool
+    explanation: str
+
+
+class QuizAttempt(FrozenModel):
+    """One immutable, detailed completion-quiz attempt."""
+
+    attempted_at: datetime
+    material_version: int = Field(ge=1)
+    score: int = Field(ge=0, le=5)
+    total: int = Field(default=5, ge=5, le=5)
+    feedback: tuple[StoredQuizFeedback, ...] = Field(min_length=5, max_length=5)
+
+
+class ReviewQuotaStatus(FrozenModel):
+    """Logical per-profile history usage after an atomic write or prune."""
+
+    used_bytes: int = Field(ge=0)
+    limit_bytes: int = Field(gt=0)
+    warning: bool = False
+    pruned_count: int = Field(default=0, ge=0)
+
+
+class ReviewHistoryRecord(FrozenModel):
+    """Validated storage envelope used by the SQLite history boundary."""
+
+    record_id: int = Field(gt=0)
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    kind: ReviewHistoryKind
+    created_at: datetime
+    payload_json: str = Field(min_length=2)

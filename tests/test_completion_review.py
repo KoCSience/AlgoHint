@@ -14,6 +14,9 @@ from algohint.infrastructure.json_learning_log_repository import JsonLearningLog
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
+from algohint.infrastructure.sqlite_review_history_repository import (
+    SqliteReviewHistoryRepository,
+)
 
 DATA_DIR = Path(__file__).parents[1] / "data"
 CORRECT_SOURCE = "a, b = map(int, input().split())\nprint(a + b)"
@@ -26,7 +29,11 @@ def make_review_services(tmp_path: Path):
     logs = JsonLearningLogRepository(runtime_paths, profiles)
     profile = ProfileService(profiles, logs).create_profile("学習者")
     return (
-        CompletionReviewService(problems, logs),
+        CompletionReviewService(
+            problems,
+            logs,
+            SqliteReviewHistoryRepository(runtime_paths, profiles),
+        ),
         SubmissionService(problems, logs, LocalJudgeRunner()),
         problems,
         profile.profile_id,
@@ -70,6 +77,9 @@ def test_quiz_requires_completion_and_all_valid_answers(tmp_path: Path) -> None:
         reviews.grade(profile_id, "l0_two_values", (*correct_answers[:-1], None))
 
     result = reviews.grade(profile_id, "l0_two_values", correct_answers)
+    history = reviews.quiz_history(profile_id, "l0_two_values")
 
     assert result.score == result.total == 5
     assert all(item.correct for item in result.feedback)
+    assert history.total_count == 1
+    assert history.attempts[0].score == 5

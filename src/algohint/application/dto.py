@@ -1,10 +1,16 @@
 """Learner-safe values returned from application services."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from algohint.domain.enums import JudgeStatus
-from algohint.domain.models import GeneratedHint, TutorSession
+from algohint.domain.models import (
+    GeneratedHint,
+    QuizAttempt,
+    ReviewQuotaStatus,
+    TutorSession,
+)
 
 
 @dataclass(frozen=True)
@@ -132,3 +138,16 @@ class QuizResult:
     score: int
     total: int
     feedback: tuple[QuizQuestionFeedback, ...]
+    attempted_at: datetime
+    quota: ReviewQuotaStatus | None = None
+
+
+@dataclass(frozen=True)
+class QuizHistoryPage:
+    """Newest-first persisted attempts plus pagination and quota state."""
+
+    attempts: tuple[QuizAttempt, ...]
+    page: int
+    page_size: int
+    total_count: int
+    quota: ReviewQuotaStatus

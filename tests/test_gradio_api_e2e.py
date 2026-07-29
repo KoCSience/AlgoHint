@@ -149,7 +149,8 @@ def test_tutor_flow_through_named_gradio_apis(
         "convert-int",
         api_name="/grade_review_quiz",
     )
-    assert "5/5" in quiz
+    assert "5/5" in quiz[0]
+    assert "全1回" in quiz[1]
 
     cleared = gradio_client.predict(
         PROFILE_ID,

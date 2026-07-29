@@ -5,6 +5,7 @@ from html import escape
 from algohint.application.dto import (
     LearnerProblemView,
     LearningReport,
+    QuizHistoryPage,
     QuizResult,
     SubmissionView,
 )
@@ -98,4 +99,53 @@ def format_quiz_result(result: QuizResult) -> str:
             detail += f"\n\n正答: {escape(item.correct_text)}"
         detail += f"\n\n{escape(item.explanation)}"
         sections.append(detail)
+    if result.quota is not None and result.quota.pruned_count:
+        sections.append(
+            f"容量上限を保つため、古い復習履歴を{result.quota.pruned_count}件整理しました。"
+        )
     return "\n\n".join(sections)
+
+
+def format_quiz_history(page: QuizHistoryPage) -> str:
+    """Render one bounded page from detailed, validated answer snapshots."""
+
+    if not page.attempts:
+        return "まだ保存済みの小テスト履歴はありません。"
+    sections = [
+        (
+            f"## 小テスト履歴（{page.page + 1}ページ目）\n\n"
+            f"全{page.total_count}回"
+        )
+    ]
+    for attempt in page.attempts:
+        details = [
+            (
+                f"### {attempt.attempted_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')} "
+                f"— {attempt.score}/{attempt.total}"
+            )
+        ]
+        for index, item in enumerate(attempt.feedback, start=1):
+            mark = "✅" if item.correct else "❌"
+            line = (
+                f"- {mark} 問{index}: {escape(item.prompt)}"
+                f" / 回答: {escape(item.selected_text)}"
+            )
+            if not item.correct:
+                line += f" / 正答: {escape(item.correct_text)}"
+            details.append(line)
+        sections.append("\n\n".join(details))
+    return "\n\n".join(sections)
+
+
+def format_review_quota(page: QuizHistoryPage) -> str:
+    """Expose logical usage and warnings without SQLite implementation details."""
+
+    used_mib = page.quota.used_bytes / (1024 * 1024)
+    limit_mib = page.quota.limit_bytes / (1024 * 1024)
+    prefix = "⚠️ " if page.quota.warning else ""
+    message = (
+        f"{prefix}復習履歴の使用量: {used_mib:.1f} MiB / {limit_mib:.0f} MiB"
+    )
+    if page.quota.warning:
+        message += "（80%を超えています。上限超過時は古い履歴から整理されます。）"
+    return message

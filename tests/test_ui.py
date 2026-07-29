@@ -19,6 +19,9 @@ from algohint.infrastructure.json_tutor_session_repository import (
 )
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
 from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
+from algohint.infrastructure.sqlite_review_history_repository import (
+    SqliteReviewHistoryRepository,
+)
 from algohint.ui.gradio_app import build_app
 from algohint.ui.gradio_workspace import _format_fallback_notice
 from algohint.ui.view_models import ApplicationServices
@@ -36,7 +39,11 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
         ApplicationServices(
             profiles=profile_service,
             selections=ExerciseSelectionService(profile_service, problem_service),
-            reviews=CompletionReviewService(problems, logs),
+            reviews=CompletionReviewService(
+                problems,
+                logs,
+                SqliteReviewHistoryRepository(paths, profile_repository),
+            ),
             problems=problem_service,
             submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
             tutor=TutorService(

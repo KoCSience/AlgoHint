@@ -107,3 +107,10 @@ class QuizTopic(StrEnum):
     COMPLEXITY = "complexity"
     EDGE_CASES = "edge_cases"
     IMPLEMENTATION = "implementation"
+
+
+class ReviewHistoryKind(StrEnum):
+    """Persisted completion-review record families sharing one quota."""
+
+    QUIZ_ATTEMPT = "quiz_attempt"
+    CODE_REVIEW = "code_review"

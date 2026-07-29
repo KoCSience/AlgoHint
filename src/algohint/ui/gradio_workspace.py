@@ -22,8 +22,10 @@ from algohint.domain.enums import (
 from algohint.domain.models import ProviderAvailability, TutorSession
 from algohint.ui.formatters import (
     format_problem,
+    format_quiz_history,
     format_quiz_result,
     format_report,
+    format_review_quota,
     format_submission,
 )
 from algohint.ui.view_models import ApplicationServices
@@ -182,6 +184,16 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         else None
     )
     initial_quiz_questions = initial_review.questions if initial_review is not None else ()
+    initial_quiz_history = (
+        services.reviews.quiz_history(
+            default_profile.profile_id,
+            initial_problem_id,
+        )
+        if initial_review is not None
+        and default_profile is not None
+        and initial_problem_id is not None
+        else None
+    )
     default_provider = (
         default_profile.preferences.hint_provider
         if default_profile is not None
@@ -365,6 +377,34 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         elem_id="submit-review-quiz",
                     )
                     quiz_result = gr.Markdown("", elem_id="review-quiz-result")
+                    review_quota = gr.Markdown(
+                        format_review_quota(initial_quiz_history)
+                        if initial_quiz_history is not None
+                        else "",
+                        elem_id="review-history-quota",
+                    )
+                    quiz_history = gr.Markdown(
+                        format_quiz_history(initial_quiz_history)
+                        if initial_quiz_history is not None
+                        else "",
+                        elem_id="review-quiz-history",
+                    )
+                    quiz_history_page = gr.State(value=0)
+                    with gr.Row():
+                        previous_quiz_history = gr.Button(
+                            "新しい履歴へ",
+                            visible=False,
+                            elem_id="previous-review-history",
+                        )
+                        next_quiz_history = gr.Button(
+                            "古い履歴へ",
+                            visible=(
+                                initial_quiz_history is not None
+                                and initial_quiz_history.total_count
+                                > initial_quiz_history.page_size
+                            ),
+                            elem_id="next-review-history",
+                        )
 
         with gr.Tab("学習レポート"):
             refresh_report = gr.Button("レポートを更新")
@@ -730,9 +770,16 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             profile_id: str | None,
             problem_id: str | None,
             *answers: str | None,
-        ) -> str:
+        ):
             if not profile_id or not problem_id:
-                return "プロフィールと問題を選択してください。"
+                return (
+                    "プロフィールと問題を選択してください。",
+                    "",
+                    "",
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
             try:
                 result = services.reviews.grade(
                     profile_id,
@@ -740,8 +787,76 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     tuple(answers),
                 )
             except (CompletionRequiredError, ValueError) as error:
-                return str(error)
-            return format_quiz_result(result)
+                return (
+                    str(error),
+                    "",
+                    "",
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+            history_page = services.reviews.quiz_history(profile_id, problem_id)
+            return (
+                format_quiz_result(result),
+                format_quiz_history(history_page),
+                format_review_quota(history_page),
+                0,
+                gr.Button(visible=False),
+                gr.Button(
+                    visible=history_page.total_count > history_page.page_size
+                ),
+            )
+
+        def change_quiz_history_page(
+            profile_id: str | None,
+            problem_id: str | None,
+            current_page: int,
+            delta: int,
+        ):
+            if not profile_id or not problem_id:
+                return "", "", 0, gr.Button(visible=False), gr.Button(visible=False)
+            requested_page = max(0, current_page + delta)
+            page = services.reviews.quiz_history(
+                profile_id,
+                problem_id,
+                page=requested_page,
+            )
+            max_page = max(0, (page.total_count - 1) // page.page_size)
+            if requested_page > max_page:
+                page = services.reviews.quiz_history(
+                    profile_id,
+                    problem_id,
+                    page=max_page,
+                )
+            has_newer = page.page > 0
+            has_older = (page.page + 1) * page.page_size < page.total_count
+            return (
+                format_quiz_history(page),
+                format_review_quota(page),
+                page.page,
+                gr.Button(visible=has_newer),
+                gr.Button(visible=has_older),
+            )
+
+        def load_quiz_history(
+            profile_id: str | None,
+            problem_id: str | None,
+        ):
+            view = (
+                services.reviews.view(profile_id, problem_id)
+                if profile_id and problem_id
+                else None
+            )
+            if view is None or not profile_id or not problem_id:
+                return "", "", 0, gr.Button(visible=False), gr.Button(visible=False)
+            page = services.reviews.quiz_history(profile_id, problem_id)
+            return (
+                format_quiz_history(page),
+                format_review_quota(page),
+                0,
+                gr.Button(visible=False),
+                gr.Button(visible=page.total_count > page.page_size),
+            )
 
         problem_selection_event = problem_selector.change(
             selected_problem,
@@ -765,6 +880,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 *quiz_radios,
                 submit_quiz,
                 quiz_result,
+            ],
+            api_visibility="private",
+        )
+        problem_selection_event.then(
+            load_quiz_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
             ],
             api_visibility="private",
         )
@@ -816,6 +943,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
+        profile_selection_event.then(
+            load_quiz_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
+            ],
+            api_visibility="private",
+        )
         provider_selector.change(
             selected_provider,
             inputs=[profile_selector, provider_selector],
@@ -845,6 +984,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 *quiz_radios,
                 submit_quiz,
                 quiz_result,
+            ],
+            api_visibility="private",
+        )
+        full_submission_event.then(
+            load_quiz_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
             ],
             api_visibility="private",
         )
@@ -916,15 +1067,68 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
+        give_up_event.then(
+            load_quiz_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
+            ],
+            api_visibility="private",
+        )
         submit_quiz.click(
             grade_quiz,
             inputs=[profile_selector, problem_selector, *quiz_radios],
-            outputs=quiz_result,
+            outputs=[
+                quiz_result,
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
+            ],
             api_name="grade_review_quiz",
             # Correctness is still validated by CompletionReviewService. Skipping
             # component preprocessing also lets the named API accept option IDs
             # after choices were populated by a prior completion event.
             preprocess=False,
+        )
+        previous_quiz_history.click(
+            lambda profile, problem, page: change_quiz_history_page(
+                profile,
+                problem,
+                page,
+                -1,
+            ),
+            inputs=[profile_selector, problem_selector, quiz_history_page],
+            outputs=[
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
+            ],
+            api_visibility="private",
+        )
+        next_quiz_history.click(
+            lambda profile, problem, page: change_quiz_history_page(
+                profile,
+                problem,
+                page,
+                1,
+            ),
+            inputs=[profile_selector, problem_selector, quiz_history_page],
+            outputs=[
+                quiz_history,
+                review_quota,
+                quiz_history_page,
+                previous_quiz_history,
+                next_quiz_history,
+            ],
+            api_visibility="private",
         )
         refresh_report.click(
             show_report,

@@ -14,7 +14,10 @@ from algohint.domain.models import (
     Profile,
     ProfilePreferences,
     ProviderAvailability,
+    QuizAttempt,
+    ReviewHistoryRecord,
     ReviewMaterial,
+    ReviewQuotaStatus,
     TestCase,
     TutorMessage,
     TutorSession,
@@ -74,6 +77,31 @@ class TutorSessionRepository(Protocol):
     ) -> TutorSession: ...
 
     def clear(self, profile_id: str, problem_id: str) -> None: ...
+
+
+class ReviewHistoryRepository(Protocol):
+    """Persist bounded completion-review records separately from aggregates."""
+
+    def save_quiz_attempt(
+        self,
+        profile_id: str,
+        problem_id: str,
+        attempt: QuizAttempt,
+    ) -> ReviewQuotaStatus: ...
+
+    def list_records(
+        self,
+        profile_id: str,
+        problem_id: str,
+        *,
+        kind: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[ReviewHistoryRecord, ...]: ...
+
+    def count_records(self, profile_id: str, problem_id: str, *, kind: str) -> int: ...
+
+    def quota_status(self, profile_id: str) -> ReviewQuotaStatus: ...
 
 
 class HintProvider(Protocol):

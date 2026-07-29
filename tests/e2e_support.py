@@ -29,6 +29,9 @@ from algohint.infrastructure.json_tutor_session_repository import (
 )
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
 from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
+from algohint.infrastructure.sqlite_review_history_repository import (
+    SqliteReviewHistoryRepository,
+)
 from algohint.ui.gradio_app import build_app
 from algohint.ui.view_models import ApplicationServices
 
@@ -79,7 +82,11 @@ def build_e2e_app(runtime_root: Path):
     services = ApplicationServices(
         profiles=profile_service,
         selections=ExerciseSelectionService(profile_service, problem_service),
-        reviews=CompletionReviewService(problems, logs),
+        reviews=CompletionReviewService(
+            problems,
+            logs,
+            SqliteReviewHistoryRepository(runtime_paths, profiles),
+        ),
         problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
         tutor=TutorService(
