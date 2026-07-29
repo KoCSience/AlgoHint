@@ -21,7 +21,9 @@ class ServerConfig:
     """Validated operational settings; the API key is deliberately hidden from repr."""
 
     model_id: str = "google/gemma-4-12B-it"
-    model_revision: str = "main"
+    # Pin the verified public checkpoint so a server restart cannot silently
+    # download a behaviorally different model from the moving main branch.
+    model_revision: str = "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
     api_key: str = field(default="", repr=False)
     max_input_tokens: int = 8_192
     max_new_tokens: int = 384
@@ -77,4 +79,3 @@ class ServerConfig:
         if not math.isfinite(seconds) or seconds <= 0:
             raise ValueError("timeout must be a positive finite number")
         return seconds
-
