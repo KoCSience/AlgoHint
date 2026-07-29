@@ -132,8 +132,13 @@ doctorは設定中のモデル情報を取得し、APIキーの存在、認証�
 表示しません。
 
 ```text
-Gemini診断: OK provider=gemini model=gemini-3.6-flash
+Gemini診断: OK provider=gemini model=gemini-3.6-flash backend=developer_api
 ```
+
+AlgoHintは`GEMINI_API_KEY`を利用するGemini Developer APIへ接続を固定します。
+`GOOGLE_GENAI_USE_VERTEXAI`や`GOOGLE_GENAI_USE_ENTERPRISE`が親プロセスに存在しても、
+Vertex AI／Enterpriseのアクセストークン認証へ切り替えません。Vertex AI対応が必要に
+なった場合は、認証・課金・リージョンの境界が異なるため別アダプタとして追加します。
 
 失敗時は、次の安全化された`reason_code`に従って対処します。
 
@@ -148,11 +153,27 @@ Gemini診断: OK provider=gemini model=gemini-3.6-flash
 | `provider_unavailable` | Gemini側の一時障害 | 時間を置き、サービス状態を確認する |
 | `empty_or_blocked_response` | 空応答または安全設定によるブロック | 質問内容を見直し、再試行する |
 | `invalid_structured_response` | 応答JSONが共通スキーマ不適合 | SDK・モデル互換性を確認する |
-| `unknown_provider_error` | 上記以外 | 例外クラスと実行環境を確認する |
+| `unknown_provider_error` | 上記以外 | development詳細診断でSDK例外を確認する |
 
-ログにもprovider、model、reason_code、HTTPステータス、再試行可能性、例外クラスだけを
-記録します。APIキー、プロンプト、コード、生レスポンスは記録しません。429と5xxの
-再試行はGoogle SDKへ任せ、AlgoHintから重複して再試行しません。
+productionログにはprovider、model、reason_code、HTTPステータス、再試行可能性、
+例外クラスだけを記録します。APIキー、プロンプト、コード、生レスポンスは記録しません。
+429と5xxの再試行はGoogle SDKへ任せ、AlgoHintから重複して再試行しません。
+
+開発中に原因を詳しく確認する場合は、次を実行します。
+
+```bash
+ALGOHINT_ENV=development uv run algohint doctor --provider gemini --verbose
+```
+
+`--verbose`はdevelopmentでだけ有効です。モデル情報取得で発生したSDK例外メッセージ、
+例外チェーン、スタックトレースを端末へ表示します。通常のヒント生成でも
+`ALGOHINT_ENV=development`なら、同じ詳細を`gemini_provider_exception`ログへ記録します。
+実際の`GEMINI_API_KEY`、`Authorization`、Bearerトークン、`x-goog-api-key`は必ず
+`[REDACTED]`へ置換します。
+
+詳細にはGoogle SDKが返した応答エラーが含まれることがあるため、共有前に内容を確認して
+ください。AlgoHintから問題文、提出コード、プロンプトを追加でログ出力することは
+ありません。developmentログをproduction環境で有効にしないでください。
 
 | 用途                  | 環境変数                                      | 秘密               |
 | --------------------- | --------------------------------------------- | ------------------ |

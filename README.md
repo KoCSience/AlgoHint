@@ -48,6 +48,13 @@ Geminiの接続、キー、権限、モデル到達性だけを確認する場�
 uv run algohint doctor --provider gemini
 ```
 
+開発中にSDKの例外メッセージとスタックトレースまで確認する場合は、認証情報を
+伏字化する詳細診断を使用します。
+
+```bash
+ALGOHINT_ENV=development uv run algohint doctor --provider gemini --verbose
+```
+
 教師用の隠しテストと模範解答を確認する場合だけ、次を使います。
 
 ```bash
