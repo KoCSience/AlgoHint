@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.explanation_service import ExplanationService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
@@ -16,6 +17,7 @@ class ApplicationServices:
     """Explicit dependencies supplied to the UI composition root."""
 
     profiles: ProfileService
+    selections: ExerciseSelectionService
     problems: ProblemService
     submissions: SubmissionService
     tutor: TutorService

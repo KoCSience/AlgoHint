@@ -7,6 +7,7 @@ from typing import Protocol, cast
 
 from algohint.application.config import AppConfig
 from algohint.application.explanation_service import ExplanationService
+from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
@@ -157,14 +158,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     logs = JsonLearningLogRepository(paths, profile_repository)
     tutor_sessions = JsonTutorSessionRepository(paths)
     providers = build_hint_providers(config)
+    profile_service = ProfileService(
+        profile_repository,
+        logs,
+        development_mode=config.development_mode,
+        default_provider=config.default_hint_provider,
+    )
+    problem_service = ProblemService(problems)
     services = ApplicationServices(
-        profiles=ProfileService(
-            profile_repository,
-            logs,
-            development_mode=config.development_mode,
-            default_provider=config.default_hint_provider,
-        ),
-        problems=ProblemService(problems),
+        profiles=profile_service,
+        selections=ExerciseSelectionService(profile_service, problem_service),
+        problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
         tutor=TutorService(
             problems,

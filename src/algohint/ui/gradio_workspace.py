@@ -1,5 +1,7 @@
 """Contextual Gradio workspace for execution, diagnostics, tutoring, and explanation."""
 
+from typing import Any, cast
+
 import gradio as gr
 
 from algohint.application.dto import LearnerDiagnostic
@@ -112,6 +114,35 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
     problem_choices = [
         (f"{problem.level} | {problem.title}", problem.problem_id) for problem in problems
     ]
+    default_selection = services.selections.restore(
+        default_profile.profile_id if default_profile is not None else None
+    )
+    initial_problem_id = default_selection.problem_id
+    if initial_problem_id is None:
+        initial_problem_header = "利用できる問題がありません。"
+        initial_problem_body = "教材データを確認してください。"
+        initial_tutor_messages: list[dict[str, str]] = []
+        initial_tutor_status = "問題を選択できません。"
+    else:
+        initial_problem_header, initial_problem_body = format_problem(
+            services.problems.get_learner_problem(initial_problem_id)
+        )
+        if default_profile is None:
+            initial_tutor_messages = []
+            initial_tutor_status = "プロフィールを作成すると問題別の履歴を保存できます。"
+        else:
+            initial_session = services.tutor.load_session(
+                default_profile.profile_id,
+                initial_problem_id,
+            )
+            initial_tutor_messages = _format_tutor_session(initial_session)
+            initial_tutor_status = (
+                "保存済みの問題別履歴を読み込みました。"
+                if initial_session.messages
+                else "まだヒント履歴はありません。"
+            )
+        if default_selection.persistence_warning:
+            initial_tutor_status += f"\n\n{default_selection.persistence_warning}"
     default_provider = (
         default_profile.preferences.hint_provider
         if default_profile is not None
@@ -170,13 +201,14 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             problem_selector = gr.Dropdown(
                 choices=problem_choices,
                 label="問題を選択",
+                value=initial_problem_id,
                 elem_id="problem-selector",
             )
             latest_diagnostic = gr.State(value=None)
             with gr.Row(equal_height=False):
                 with gr.Column(scale=6, min_width=360):
-                    problem_header = gr.Markdown("問題を選択してください。")
-                    problem_body = gr.Markdown("")
+                    problem_header = gr.Markdown(initial_problem_header)
+                    problem_body = gr.Markdown(initial_problem_body)
                 with gr.Column(scale=5, min_width=340):
                     code = gr.Code(
                         label="Pythonコード",
@@ -199,6 +231,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     gr.Markdown("## ヒントコーチ")
                     tutor_chat = gr.Chatbot(
                         label="問題ごとの質問・ヒント履歴",
+                        value=cast(Any, initial_tutor_messages),
                         height=320,
                         sanitize_html=True,
                         allow_file_downloads=False,
@@ -206,7 +239,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         elem_id="tutor-chat",
                     )
                     tutor_status = gr.Markdown(
-                        "質問するか、「わからない」を押すと次の一歩を提示します。",
+                        initial_tutor_status,
                         elem_id="tutor-status",
                     )
                     cloud_consent = gr.Checkbox(
@@ -258,17 +291,34 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
 
         def selected_problem(profile_id: str | None, problem_id: str | None):
             if not problem_id:
-                return "問題を選択してください。", "", [], ""
+                return "問題を選択してください。", "", [], "", None, ""
+            selection = services.selections.select(profile_id, problem_id)
             header, body = format_problem(services.problems.get_learner_problem(problem_id))
             if not profile_id:
-                return header, body, [], "プロフィールを選択してください。"
+                return (
+                    header,
+                    body,
+                    [],
+                    "プロフィールを選択してください。",
+                    None,
+                    "",
+                )
             session = services.tutor.load_session(profile_id, problem_id)
             status = (
                 "保存済みの問題別履歴を読み込みました。"
                 if session.messages
                 else "まだヒント履歴はありません。"
             )
-            return header, body, _format_tutor_session(session), status
+            if selection.persistence_warning:
+                status += f"\n\n{selection.persistence_warning}"
+            return (
+                header,
+                body,
+                _format_tutor_session(session),
+                status,
+                None,
+                "",
+            )
 
         def created_profile(display_name: str):
             if not display_name.strip():
@@ -278,18 +328,45 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     "プロフィール名を入力してください。",
                     "プロフィール名を入力してください。",
                     False,
+                    gr.Dropdown(),
+                    "問題を選択してください。",
+                    "",
+                    [],
+                    "プロフィール名を入力してください。",
+                    None,
+                    "",
                 )
             profile = services.profiles.create_profile(display_name)
+            selection = services.selections.restore(profile.profile_id)
             choices = [
                 (item.display_name, item.profile_id) for item in services.profiles.list_profiles()
             ]
             provider = profile.preferences.hint_provider
+            if selection.problem_id is None:
+                header, body = "利用できる問題がありません。", "教材データを確認してください。"
+                messages: list[dict[str, str]] = []
+                tutor_message = "問題を選択できません。"
+            else:
+                header, body = format_problem(
+                    services.problems.get_learner_problem(selection.problem_id)
+                )
+                messages = _format_tutor_session(
+                    services.tutor.load_session(profile.profile_id, selection.problem_id)
+                )
+                tutor_message = "まだヒント履歴はありません。"
             return (
                 gr.Dropdown(choices=choices, value=profile.profile_id),
                 gr.Dropdown(value=provider.value),
                 _format_provider_status(provider, services.tutor.provider_availability(provider)),
                 f"{profile.display_name} を選択しました。",
                 False,
+                gr.Dropdown(value=selection.problem_id),
+                header,
+                body,
+                messages,
+                tutor_message,
+                None,
+                "",
             )
 
         def selected_profile(profile_id: str | None, problem_id: str | None):
@@ -297,21 +374,46 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return (
                     gr.Dropdown(value=HintProviderId.OPENAI.value),
                     "プロフィールを選択してください。",
+                    gr.Dropdown(value=problem_id),
+                    "問題を選択してください。",
+                    "",
                     [],
+                    "プロフィールを選択してください。",
                     False,
+                    None,
+                    "",
                 )
             profile = services.profiles.get_profile(profile_id)
             provider = profile.preferences.hint_provider
-            messages: list[dict[str, str]] = []
-            if problem_id:
-                messages = _format_tutor_session(
-                    services.tutor.load_session(profile_id, problem_id)
+            selection = services.selections.restore(profile_id)
+            if selection.problem_id is None:
+                header, body = "利用できる問題がありません。", "教材データを確認してください。"
+                messages: list[dict[str, str]] = []
+                tutor_message = "問題を選択できません。"
+            else:
+                header, body = format_problem(
+                    services.problems.get_learner_problem(selection.problem_id)
                 )
+                session = services.tutor.load_session(profile_id, selection.problem_id)
+                messages = _format_tutor_session(session)
+                tutor_message = (
+                    "保存済みの問題別履歴を読み込みました。"
+                    if session.messages
+                    else "まだヒント履歴はありません。"
+                )
+                if selection.persistence_warning:
+                    tutor_message += f"\n\n{selection.persistence_warning}"
             return (
                 gr.Dropdown(value=provider.value),
                 _format_provider_status(provider, services.tutor.provider_availability(provider)),
+                gr.Dropdown(value=selection.problem_id),
+                header,
+                body,
                 messages,
+                tutor_message,
                 False,
+                None,
+                "",
             )
 
         def selected_provider(profile_id: str | None, provider_name: str):
@@ -458,7 +560,14 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         problem_selector.change(
             selected_problem,
             inputs=[profile_selector, problem_selector],
-            outputs=[problem_header, problem_body, tutor_chat, tutor_status],
+            outputs=[
+                problem_header,
+                problem_body,
+                tutor_chat,
+                tutor_status,
+                latest_diagnostic,
+                submission_result,
+            ],
             api_name="select_problem",
         )
         create_profile.click(
@@ -470,6 +579,13 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 provider_status,
                 report_result,
                 cloud_consent,
+                problem_selector,
+                problem_header,
+                problem_body,
+                tutor_chat,
+                tutor_status,
+                latest_diagnostic,
+                submission_result,
             ],
             api_name="create_profile",
         )
@@ -479,8 +595,14 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=[
                 provider_selector,
                 provider_status,
+                problem_selector,
+                problem_header,
+                problem_body,
                 tutor_chat,
+                tutor_status,
                 cloud_consent,
+                latest_diagnostic,
+                submission_result,
             ],
             api_name="select_profile",
         )

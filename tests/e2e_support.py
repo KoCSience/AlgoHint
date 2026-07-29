@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from algohint.application.explanation_service import ExplanationService
+from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
@@ -67,14 +68,17 @@ def build_e2e_app(runtime_root: Path):
     logs = JsonLearningLogRepository(runtime_paths, profiles)
     sessions = JsonTutorSessionRepository(runtime_paths)
     provider = DeterministicGeminiProvider()
+    profile_service = ProfileService(
+        profiles,
+        logs,
+        development_mode=True,
+        default_provider=HintProviderId.GEMINI,
+    )
+    problem_service = ProblemService(problems)
     services = ApplicationServices(
-        profiles=ProfileService(
-            profiles,
-            logs,
-            development_mode=True,
-            default_provider=HintProviderId.GEMINI,
-        ),
-        problems=ProblemService(problems),
+        profiles=profile_service,
+        selections=ExerciseSelectionService(profile_service, problem_service),
+        problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
         tutor=TutorService(
             problems,

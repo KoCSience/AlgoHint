@@ -173,9 +173,18 @@ class GeneratedHint(FrozenModel):
 
 
 class ProfilePreferences(FrozenModel):
-    """Persisted learner choices that never imply consent to cloud transmission."""
+    """Persisted UI preferences that never prove progress or cloud consent.
+
+    ``last_problem_id`` is only a best-effort navigation pointer. Completion
+    gates must continue to use :class:`ProblemProgress`, because content can be
+    removed and multiple browser tabs may overwrite this convenience state.
+    """
 
     hint_provider: HintProviderId = HintProviderId.OPENAI
+    last_problem_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9_-]+$",
+    )
 
 
 class Profile(FrozenModel):

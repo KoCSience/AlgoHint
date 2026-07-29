@@ -43,19 +43,20 @@ def test_existing_profile_json_gets_default_preferences(tmp_path: Path) -> None:
     profile = JsonProfileRepository(paths).get_profile("old-profile")
 
     assert profile.preferences.hint_provider is HintProviderId.OPENAI
+    assert profile.preferences.last_problem_id is None
     assert not profile.is_development
 
 
 def test_provider_preference_is_persisted_per_profile(tmp_path: Path) -> None:
     service, repository = make_profile_service(tmp_path)
     profile = service.create_profile("学習者")
+    service.set_last_problem(profile.profile_id, "l0_two_values")
 
     service.set_hint_provider(profile.profile_id, HintProviderId.GEMINI)
 
-    assert (
-        repository.get_profile(profile.profile_id).preferences.hint_provider
-        is HintProviderId.GEMINI
-    )
+    preferences = repository.get_profile(profile.profile_id).preferences
+    assert preferences.hint_provider is HintProviderId.GEMINI
+    assert preferences.last_problem_id == "l0_two_values"
 
 
 def test_development_profile_is_persistent_and_hidden_in_production(

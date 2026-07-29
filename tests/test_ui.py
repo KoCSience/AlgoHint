@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from algohint.application.explanation_service import ExplanationService
+from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
@@ -28,10 +29,13 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     profile_repository = JsonProfileRepository(paths)
     logs = JsonLearningLogRepository(paths, profile_repository)
     fallback = RuleBasedHintProvider()
+    profile_service = ProfileService(profile_repository, logs, development_mode=True)
+    problem_service = ProblemService(problems)
     app = build_app(
         ApplicationServices(
-            profiles=ProfileService(profile_repository, logs, development_mode=True),
-            problems=ProblemService(problems),
+            profiles=profile_service,
+            selections=ExerciseSelectionService(profile_service, problem_service),
+            problems=problem_service,
             submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
             tutor=TutorService(
                 problems,
@@ -53,6 +57,8 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     config_text = json.dumps(app.get_config_file(), ensure_ascii=False, default=str)
     assert "開発テスト" in config_text
     assert "ヒントモデル" in config_text
+    assert '"value": "l0_two_values"' in config_text
+    assert "二つの数の合計" in config_text
     assert "わからない（次のヒント）" in config_text
     assert "実行結果からヒント" in config_text
 

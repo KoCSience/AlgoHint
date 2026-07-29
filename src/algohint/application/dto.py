@@ -1,6 +1,7 @@
 """Learner-safe values returned from application services."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 from algohint.domain.enums import JudgeStatus
 from algohint.domain.models import GeneratedHint, TutorSession
@@ -70,3 +71,13 @@ class TutorReply:
     hint: GeneratedHint
     session: TutorSession
     source_omitted: bool = False
+
+
+@dataclass(frozen=True)
+class ExerciseSelection:
+    """Resolved workspace location, deliberately separate from learning progress."""
+
+    problem_id: str | None
+    source: Literal["restored", "default", "explicit", "unavailable"]
+    preference_repaired: bool = False
+    persistence_warning: str | None = None

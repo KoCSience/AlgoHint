@@ -59,8 +59,23 @@ class ProfileService:
 
         profile = self._profiles.get_profile(profile_id)
         updated = profile.model_copy(
-            update={"preferences": ProfilePreferences(hint_provider=provider)}
+            update={
+                "preferences": profile.preferences.model_copy(
+                    update={"hint_provider": provider}
+                )
+            }
         )
+        self._profiles.save_profile(updated)
+        return updated
+
+    def set_last_problem(self, profile_id: str, problem_id: str) -> Profile:
+        """Persist a validated navigation pointer without changing progress."""
+
+        profile = self.get_profile(profile_id)
+        preferences = profile.preferences.model_copy(
+            update={"last_problem_id": problem_id}
+        )
+        updated = profile.model_copy(update={"preferences": preferences})
         self._profiles.save_profile(updated)
         return updated
 
