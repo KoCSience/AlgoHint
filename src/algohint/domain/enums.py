@@ -64,6 +64,7 @@ class ProviderFailureReason(StrEnum):
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     EMPTY_OR_BLOCKED_RESPONSE = "empty_or_blocked_response"
     INVALID_STRUCTURED_RESPONSE = "invalid_structured_response"
+    CLIENT_LIFECYCLE_ERROR = "client_lifecycle_error"
     UNKNOWN_PROVIDER_ERROR = "unknown_provider_error"
 
 

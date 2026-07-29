@@ -91,6 +91,64 @@ class BlockedGeminiResponse:
         raise ValueError("raw blocked response must remain private")
 
 
+class LifecycleState:
+    """State retained by SDK resources after their owning client is released."""
+
+    def __init__(self) -> None:
+        self.closed = False
+        self.close_calls = 0
+        self.generate_calls = 0
+        self.get_calls = 0
+
+
+class LifecycleGeminiModels:
+    def __init__(self, state: LifecycleState) -> None:
+        self._state = state
+
+    def generate_content(self, **kwargs):
+        if self._state.closed:
+            raise RuntimeError("Cannot send a request, as the client has been closed.")
+        self._state.generate_calls += 1
+        state = self._state
+
+        class Response:
+            @property
+            def text(self) -> str:
+                if state.closed:
+                    raise RuntimeError("Cannot send a request, as the client has been closed.")
+                return response_json()
+
+        return Response()
+
+    def get(self, **kwargs):
+        if self._state.closed:
+            raise RuntimeError("Cannot send a request, as the client has been closed.")
+        self._state.get_calls += 1
+        return SimpleNamespace(name=kwargs["model"])
+
+
+class LifecycleGeminiClient:
+    """Mimic google.genai.Client, whose destructor closes shared transport."""
+
+    def __init__(self, state: LifecycleState, *, close_error: Exception | None = None) -> None:
+        self.models = LifecycleGeminiModels(state)
+        self._state = state
+        self._close_error = close_error
+
+    def close(self) -> None:
+        if not self._state.closed:
+            self._state.closed = True
+            self._state.close_calls += 1
+        if self._close_error is not None:
+            raise self._close_error
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 def response_json(text: str = "最小ケースで変数の変化を追いましょう。") -> str:
     return json.dumps({"text": text, "category": "understanding"}, ensure_ascii=False)
 
@@ -177,7 +235,7 @@ def test_gemini_provider_pins_developer_api_authentication(
 
     monkeypatch.setattr(genai, "Client", fake_client)
 
-    GeminiHintProvider("gemini-3.6-flash")._client()
+    GeminiHintProvider("gemini-3.6-flash")._create_client()
 
     assert captured["api_key"] == "test-only-placeholder"
     assert captured["vertexai"] is False
@@ -259,6 +317,11 @@ def test_gemini_provider_classifies_transport_timeout() -> None:
             True,
         ),
         (
+            "Cannot send a request, as the client has been closed.",
+            ProviderFailureReason.CLIENT_LIFECYCLE_ERROR,
+            False,
+        ),
+        (
             "unexpected SDK runtime failure",
             ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
             False,
@@ -281,6 +344,95 @@ def test_gemini_provider_classifies_runtime_errors(
     assert raised.value.reason_code is reason
     assert raised.value.retryable is retryable
     assert message not in str(raised.value)
+
+
+def test_gemini_provider_keeps_client_alive_until_response_is_read() -> None:
+    states: list[LifecycleState] = []
+
+    def client_factory() -> LifecycleGeminiClient:
+        state = LifecycleState()
+        states.append(state)
+        return LifecycleGeminiClient(state)
+
+    provider = GeminiHintProvider("gemini-3.6-flash", client_factory=client_factory)
+
+    first = provider.generate(make_request())
+    second = provider.generate(make_request())
+
+    assert first.provider == second.provider == "gemini"
+    assert len(states) == 2
+    assert all(state.generate_calls == 1 for state in states)
+    assert all(state.close_calls == 1 for state in states)
+    assert all(state.closed for state in states)
+
+
+def test_gemini_doctor_keeps_client_alive_until_model_lookup_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-only-placeholder")
+    state = LifecycleState()
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: LifecycleGeminiClient(state),
+    )
+
+    diagnostic = provider.diagnose()
+
+    assert diagnostic.healthy
+    assert state.get_calls == 1
+    assert state.close_calls == 1
+
+
+def test_gemini_provider_close_failure_does_not_hide_valid_hint(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    state = LifecycleState()
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: LifecycleGeminiClient(
+            state,
+            close_error=RuntimeError("private close failure"),
+        ),
+    )
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="algohint.infrastructure.gemini_hint_provider",
+    ):
+        hint = provider.generate(make_request())
+
+    assert hint.provider == "gemini"
+    assert state.close_calls == 1
+    assert "gemini_client_close_failed" in caplog.text
+    assert "private close failure" not in caplog.text
+
+
+def test_gemini_provider_close_failure_does_not_mask_request_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def failing_close() -> None:
+        raise RuntimeError("private close failure")
+
+    client = SimpleNamespace(
+        models=FailingGeminiModels(TimeoutError("private request failure")),
+        close=failing_close,
+    )
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: client,
+    )
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="algohint.infrastructure.gemini_hint_provider",
+    ):
+        with pytest.raises(HintProviderError) as raised:
+            provider.generate(make_request())
+
+    assert raised.value.reason_code is ProviderFailureReason.TIMEOUT
+    assert "gemini_client_close_failed" in caplog.text
+    assert "private close failure" not in caplog.text
+    assert "private request failure" not in caplog.text
 
 
 def test_gemini_provider_logs_redacted_traceback_in_development(

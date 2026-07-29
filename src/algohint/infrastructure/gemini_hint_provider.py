@@ -2,7 +2,8 @@
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from pydantic import ValidationError
@@ -51,7 +52,9 @@ class GeminiHintProvider:
             sends_data_off_device=True,
         )
 
-    def _client(self):
+    def _create_client(self):
+        """Create one fresh client for each generate or diagnose operation."""
+
         if self._client_factory is not None:
             return self._client_factory()
         from google import genai
@@ -67,11 +70,54 @@ class GeminiHintProvider:
             http_options=types.HttpOptions(timeout=int(self._timeout_seconds * 1_000)),
         )
 
+    @contextmanager
+    def _managed_client(self) -> Iterator[Any]:
+        """Keep the owning SDK client alive until response extraction finishes."""
+
+        client = self._create_client()
+        try:
+            yield client
+        finally:
+            self._close_client(client)
+
+    def _close_client(self, client: Any) -> None:
+        """Release resources without masking the primary provider operation."""
+
+        close = getattr(client, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception as error:
+            LOGGER.warning(
+                "gemini_client_close_failed provider=gemini model=%s exception_type=%s",
+                self._model,
+                error.__class__.__name__,
+            )
+            self._log_development_exception("client.close", error)
+
     def generate(self, request: HintGenerationRequest) -> GeneratedHint:
         """Request one structured hint and classify failures without raw content."""
 
         try:
-            response = self._client().models.generate_content(
+            with self._managed_client() as client:
+                response_text = self._request_response_text(client, request)
+        except HintProviderError:
+            raise
+        except Exception as error:
+            self._log_development_exception("generate_content", error)
+            raise self._classified_error(error) from error
+        return self._validated_hint(response_text)
+
+    def _request_response_text(
+        self,
+        client: Any,
+        request: HintGenerationRequest,
+    ) -> str:
+        """Call Gemini and materialize response text before closing its client."""
+
+        try:
+            response = client.models.generate_content(
                 model=self._model,
                 contents=build_hint_prompt(request),
                 config={
@@ -98,6 +144,11 @@ class GeminiHintProvider:
                 ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE,
                 empty_response_error,
             ) from empty_response_error
+        return response_text
+
+    def _validated_hint(self, response_text: str) -> GeneratedHint:
+        """Validate materialized JSON independently from provider resources."""
+
         try:
             payload = ProviderHintPayload.model_validate_json(response_text)
         except (ValidationError, ValueError) as error:
@@ -123,7 +174,8 @@ class GeminiHintProvider:
                 reason_code=ProviderFailureReason.NOT_CONFIGURED,
             )
         try:
-            self._client().models.get(model=self._model)
+            with self._managed_client() as client:
+                client.models.get(model=self._model)
         except Exception as error:
             classified = self._classified_error(error)
             debug_details = self._development_details(error) if verbose else None
@@ -204,6 +256,9 @@ class GeminiHintProvider:
             message = str(error)
             if "Could not resolve API token from the environment" in message:
                 reason_code = ProviderFailureReason.AUTHENTICATION_OR_PERMISSION
+                retryable = False
+            elif "client has been closed" in message.lower():
+                reason_code = ProviderFailureReason.CLIENT_LIFECYCLE_ERROR
                 retryable = False
             elif message.startswith("Operation ") and " timed out." in message:
                 reason_code = ProviderFailureReason.TIMEOUT

@@ -63,3 +63,11 @@ def test_fallback_notice_is_actionable_without_raw_provider_data() -> None:
     assert "APIキー、権限、または課金設定" in notice
     assert "RuleBased" in notice
     assert "raw" not in notice
+
+
+def test_client_lifecycle_fallback_notice_is_actionable() -> None:
+    notice = _format_fallback_notice("client_lifecycle_error")
+
+    assert "内部クライアント" in notice
+    assert "更新または再起動" in notice
+    assert "RuleBased" in notice

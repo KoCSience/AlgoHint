@@ -49,6 +49,9 @@ FALLBACK_NOTICES = {
     ProviderFailureReason.INVALID_STRUCTURED_RESPONSE.value: (
         "モデルの応答形式を検証できませんでした。"
     ),
+    ProviderFailureReason.CLIENT_LIFECYCLE_ERROR.value: (
+        "モデル接続の内部クライアントが早期終了しました。アプリを更新または再起動してください。"
+    ),
     ProviderFailureReason.UNKNOWN_PROVIDER_ERROR.value: (
         "モデル呼び出しで分類できないエラーが発生しました。doctor診断を実行してください。"
     ),
