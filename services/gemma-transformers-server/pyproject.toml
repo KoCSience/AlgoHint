@@ -11,6 +11,9 @@ dependencies = [
     "pillow>=12.1.0,<13",
     "pydantic>=2.13.4,<3",
     "torch==2.13.0",
+    # Keep the official processor importable; Gemma 4 registers its unified
+    # image preprocessor even though the HTTP contract rejects image inputs.
+    "torchvision==0.28.0",
     "transformers==5.14.1",
     "uvicorn>=0.40.0,<1",
 ]
