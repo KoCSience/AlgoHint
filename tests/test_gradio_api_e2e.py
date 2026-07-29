@@ -1,6 +1,5 @@
 """Exercise the complete tutoring flow through Gradio's public API client."""
 
-import socket
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,7 +11,7 @@ from tests.e2e_support import (
     PROFILE_ID,
     PROBLEM_ID,
     DeterministicGeminiProvider,
-    build_e2e_app,
+    running_e2e_app,
 )
 
 pytestmark = [
@@ -23,14 +22,6 @@ pytestmark = [
         "ignore:The copy keyword is deprecated.*:pandas.errors.Pandas4Warning"
     ),
 ]
-
-
-def _unused_local_port() -> int:
-    """Reserve an ephemeral loopback port long enough to avoid fixed-port conflicts."""
-
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
 
 
 def _chat_text(message: dict[str, object]) -> str:
@@ -52,20 +43,9 @@ def api_harness(
     """Run an isolated queued Gradio server and always release its thread."""
 
     monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "False")
-    app, provider = build_e2e_app(tmp_path / "api-e2e-data")
-    port = _unused_local_port()
-    _, local_url, _ = app.launch(
-        server_name="127.0.0.1",
-        server_port=port,
-        prevent_thread_lock=True,
-        show_error=True,
-        quiet=True,
-    )
-    try:
+    with running_e2e_app(tmp_path / "api-e2e-data") as (_, local_url, provider):
         client = Client(local_url, verbose=False, analytics_enabled=False)
         yield client, provider
-    finally:
-        app.close()
 
 
 def test_tutor_flow_through_named_gradio_apis(

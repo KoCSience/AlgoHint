@@ -139,18 +139,21 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 label="プロフィール",
                 value=default_profile.profile_id if default_profile is not None else None,
                 scale=2,
+                elem_id="profile-selector",
             )
             provider_selector = gr.Dropdown(
                 choices=PROVIDER_CHOICES,
                 label="ヒントモデル",
                 value=default_provider.value,
                 scale=1,
+                elem_id="provider-selector",
             )
         provider_status = gr.Markdown(
             _format_provider_status(
                 default_provider,
                 services.tutor.provider_availability(default_provider),
-            )
+            ),
+            elem_id="provider-status",
         )
         with gr.Accordion("プロフィール管理", open=False):
             with gr.Row():
@@ -164,18 +167,34 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             gr.Markdown(roadmap)
 
         with gr.Tab("問題演習"):
-            problem_selector = gr.Dropdown(choices=problem_choices, label="問題を選択")
+            problem_selector = gr.Dropdown(
+                choices=problem_choices,
+                label="問題を選択",
+                elem_id="problem-selector",
+            )
             latest_diagnostic = gr.State(value=None)
             with gr.Row(equal_height=False):
                 with gr.Column(scale=6, min_width=360):
                     problem_header = gr.Markdown("問題を選択してください。")
                     problem_body = gr.Markdown("")
                 with gr.Column(scale=5, min_width=340):
-                    code = gr.Code(label="Pythonコード", language="python", value="")
+                    code = gr.Code(
+                        label="Pythonコード",
+                        language="python",
+                        value="",
+                        elem_id="code-editor",
+                    )
                     with gr.Row():
-                        sample_submit = gr.Button("公開サンプルで実行")
-                        full_submit = gr.Button("全テストで提出", variant="primary")
-                    submission_result = gr.Markdown("")
+                        sample_submit = gr.Button(
+                            "公開サンプルで実行",
+                            elem_id="sample-submit",
+                        )
+                        full_submit = gr.Button(
+                            "全テストで提出",
+                            variant="primary",
+                            elem_id="full-submit",
+                        )
+                    submission_result = gr.Markdown("", elem_id="submission-result")
 
                     gr.Markdown("## ヒントコーチ")
                     tutor_chat = gr.Chatbot(
@@ -184,9 +203,11 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         sanitize_html=True,
                         allow_file_downloads=False,
                         buttons=[],
+                        elem_id="tutor-chat",
                     )
                     tutor_status = gr.Markdown(
-                        "質問するか、「わからない」を押すと次の一歩を提示します。"
+                        "質問するか、「わからない」を押すと次の一歩を提示します。",
+                        elem_id="tutor-status",
                     )
                     cloud_consent = gr.Checkbox(
                         label=(
@@ -194,17 +215,32 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                             "選択中のクラウドモデルへ送信することに同意します"
                         ),
                         value=False,
+                        elem_id="cloud-consent",
                     )
                     question = gr.Textbox(
                         label="質問",
                         placeholder="例: このループで何を数えるべきですか？",
                         max_length=1_000,
+                        elem_id="tutor-question",
                     )
                     with gr.Row():
-                        ask_question = gr.Button("質問する", variant="primary")
-                        stuck = gr.Button("わからない（次のヒント）")
-                        result_hint = gr.Button("実行結果からヒント")
-                    clear_history = gr.Button("この問題のヒント履歴をクリア")
+                        ask_question = gr.Button(
+                            "質問する",
+                            variant="primary",
+                            elem_id="ask-question",
+                        )
+                        stuck = gr.Button(
+                            "わからない（次のヒント）",
+                            elem_id="stuck-hint",
+                        )
+                        result_hint = gr.Button(
+                            "実行結果からヒント",
+                            elem_id="result-hint",
+                        )
+                    clear_history = gr.Button(
+                        "この問題のヒント履歴をクリア",
+                        elem_id="clear-tutor-history",
+                    )
 
                     gr.Markdown("## 解説")
                     with gr.Row():

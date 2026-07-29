@@ -1,6 +1,10 @@
 """Deterministic local app composition shared by API and browser E2E tests."""
 
+import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from algohint.application.explanation_service import ExplanationService
 from algohint.application.learning_report_service import LearningReportService
@@ -85,3 +89,31 @@ def build_e2e_app(runtime_root: Path):
         teacher_repository=problems,
     )
     return build_app(services, teacher_mode=False, shared_mode=False), provider
+
+
+def _unused_local_port() -> int:
+    """Choose an ephemeral loopback port instead of coupling tests to 7860."""
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+@contextmanager
+def running_e2e_app(
+    runtime_root: Path,
+) -> Iterator[tuple[Any, str, DeterministicGeminiProvider]]:
+    """Launch the queued app and guarantee server shutdown after each E2E test."""
+
+    app, provider = build_e2e_app(runtime_root)
+    _, local_url, _ = app.launch(
+        server_name="127.0.0.1",
+        server_port=_unused_local_port(),
+        prevent_thread_lock=True,
+        show_error=True,
+        quiet=True,
+    )
+    try:
+        yield app, local_url, provider
+    finally:
+        app.close()
