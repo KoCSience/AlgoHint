@@ -23,10 +23,11 @@ class DoctorModels:
 
 
 def test_doctor_parser_requires_supported_provider() -> None:
-    args = _parser().parse_args(["doctor", "--provider", "gemini"])
+    args = _parser().parse_args(["doctor", "--provider", "gemini", "--verbose"])
 
     assert args.command == "doctor"
     assert args.provider == "gemini"
+    assert args.verbose
 
 
 def test_gemini_doctor_succeeds_without_generation(
@@ -75,6 +76,63 @@ def test_gemini_doctor_reports_safe_failure(
     assert "http_status=404" in output
     assert "private-key-marker" not in output
     assert "raw-response-marker" not in output
+
+
+def test_gemini_doctor_verbose_shows_redacted_development_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = "private-key-marker"
+    bearer = "private-bearer-marker"
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(
+            models=DoctorModels(
+                RuntimeError(f"diagnostic failed api_key={secret} Authorization: Bearer {bearer}")
+            )
+        ),
+        development_mode=True,
+    )
+
+    status = _run_gemini_doctor(
+        provider,
+        verbose=True,
+        development_mode=True,
+    )
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "Gemini診断詳細" in output
+    assert "RuntimeError" in output
+    assert "diagnostic failed" in output
+    assert "[REDACTED]" in output
+    assert secret not in output
+    assert bearer not in output
+
+
+def test_gemini_doctor_verbose_requires_development(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "private-key-marker")
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(
+            models=DoctorModels(RuntimeError("private-runtime-marker"))
+        ),
+    )
+
+    status = _run_gemini_doctor(
+        provider,
+        verbose=True,
+        development_mode=False,
+    )
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "developmentでのみ有効" in output
+    assert "private-runtime-marker" not in output
 
 
 def test_gemini_doctor_reports_missing_key(

@@ -56,15 +56,30 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="Provider to diagnose",
     )
+    doctor.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show redacted exception details when running in development",
+    )
     return parser
 
 
-def _run_gemini_doctor(provider: GeminiHintProvider) -> int:
-    """Print only classified diagnostic metadata and return a shell status."""
+def _run_gemini_doctor(
+    provider: GeminiHintProvider,
+    *,
+    verbose: bool = False,
+    development_mode: bool = False,
+) -> int:
+    """Print diagnostics, allowing redacted details only in development."""
 
-    diagnostic = provider.diagnose()
+    detailed = verbose and development_mode
+    diagnostic = provider.diagnose(verbose=detailed)
     if diagnostic.healthy:
-        print(f"Gemini診断: OK provider={diagnostic.provider} model={diagnostic.model}")
+        print(
+            "Gemini診断: OK "
+            f"provider={diagnostic.provider} model={diagnostic.model} "
+            "backend=developer_api"
+        )
         return 0
     reason = diagnostic.reason_code.value if diagnostic.reason_code else "unknown"
     status = diagnostic.http_status if diagnostic.http_status is not None else "-"
@@ -76,6 +91,11 @@ def _run_gemini_doctor(provider: GeminiHintProvider) -> int:
         f"retryable={str(diagnostic.retryable).lower()} "
         f"exception_type={exception_type}"
     )
+    if verbose and not development_mode:
+        print("詳細診断はdevelopmentでのみ有効です。ALGOHINT_ENV=developmentを設定してください。")
+    elif diagnostic.debug_details is not None:
+        print("Gemini診断詳細（認証情報は伏字化済み）:")
+        print(diagnostic.debug_details, end="" if diagnostic.debug_details.endswith("\n") else "\n")
     return 1
 
 
@@ -88,8 +108,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         provider = GeminiHintProvider(
             config.gemini_model,
             timeout_seconds=config.cloud_timeout_seconds,
+            development_mode=config.development_mode,
         )
-        status = _run_gemini_doctor(provider)
+        status = _run_gemini_doctor(
+            provider,
+            verbose=args.verbose,
+            development_mode=config.development_mode,
+        )
         if status:
             raise SystemExit(status)
         return

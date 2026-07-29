@@ -1,5 +1,6 @@
 """Google Gemini API adapter for structured tutoring hints."""
 
+import logging
 import os
 from collections.abc import Callable
 from typing import Any
@@ -19,6 +20,9 @@ from algohint.infrastructure.hint_prompt import (
     ProviderHintPayload,
     build_hint_prompt,
 )
+from algohint.infrastructure.provider_debug import format_provider_exception
+
+LOGGER = logging.getLogger(__name__)
 
 
 class GeminiHintProvider:
@@ -30,10 +34,12 @@ class GeminiHintProvider:
         *,
         timeout_seconds: float = 45.0,
         client_factory: Callable[[], Any] | None = None,
+        development_mode: bool = False,
     ) -> None:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._client_factory = client_factory
+        self._development_mode = development_mode
 
     def availability(self) -> ProviderAvailability:
         """Report configuration presence without exposing the credential value."""
@@ -76,15 +82,18 @@ class GeminiHintProvider:
                 },
             )
         except Exception as error:
+            self._log_development_exception("generate_content", error)
             raise self._classified_error(error) from error
         try:
             response_text = response.text
         except (AttributeError, ValueError) as error:
+            self._log_development_exception("read_response", error)
             raise self._response_error(
                 ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE, error
             ) from error
         if not isinstance(response_text, str) or not response_text.strip():
             empty_response_error = ValueError("empty provider response")
+            self._log_development_exception("validate_response", empty_response_error)
             raise self._response_error(
                 ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE,
                 empty_response_error,
@@ -92,6 +101,7 @@ class GeminiHintProvider:
         try:
             payload = ProviderHintPayload.model_validate_json(response_text)
         except (ValidationError, ValueError) as error:
+            self._log_development_exception("validate_response", error)
             raise self._response_error(
                 ProviderFailureReason.INVALID_STRUCTURED_RESPONSE, error
             ) from error
@@ -102,7 +112,7 @@ class GeminiHintProvider:
             model_name=self._model,
         )
 
-    def diagnose(self) -> ProviderDiagnostic:
+    def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
         """Check key, permission, and model reachability without learner content."""
 
         if not self.availability().available:
@@ -116,6 +126,9 @@ class GeminiHintProvider:
             self._client().models.get(model=self._model)
         except Exception as error:
             classified = self._classified_error(error)
+            debug_details = self._development_details(error) if verbose else None
+            if debug_details is not None:
+                self._log_debug_details("models.get", debug_details)
             return ProviderDiagnostic(
                 healthy=False,
                 provider=classified.provider,
@@ -124,8 +137,32 @@ class GeminiHintProvider:
                 http_status=classified.http_status,
                 retryable=classified.retryable,
                 exception_type=classified.exception_type,
+                debug_details=debug_details,
             )
         return ProviderDiagnostic(healthy=True, provider="gemini", model=self._model)
+
+    def _log_development_exception(self, operation: str, error: Exception) -> None:
+        """Log a redacted traceback only when explicitly running in development."""
+
+        details = self._development_details(error)
+        if details is not None:
+            self._log_debug_details(operation, details)
+
+    def _development_details(self, error: Exception) -> str | None:
+        if not self._development_mode:
+            return None
+        return format_provider_exception(
+            error,
+            secrets=(os.environ.get("GEMINI_API_KEY", ""),),
+        )
+
+    def _log_debug_details(self, operation: str, details: str) -> None:
+        LOGGER.error(
+            "gemini_provider_exception provider=gemini model=%s operation=%s\n%s",
+            self._model,
+            operation,
+            details,
+        )
 
     def _response_error(
         self, reason_code: ProviderFailureReason, error: Exception

@@ -127,7 +127,7 @@ class ProviderAvailability(FrozenModel):
 
 
 class ProviderDiagnostic(FrozenModel):
-    """Secret-free provider reachability result for the doctor command."""
+    """Provider reachability result with optional redacted development details."""
 
     healthy: bool
     provider: str
@@ -136,6 +136,7 @@ class ProviderDiagnostic(FrozenModel):
     http_status: int | None = None
     retryable: bool = False
     exception_type: str | None = None
+    debug_details: str | None = None
 
 
 class HintGenerationRequest(FrozenModel):

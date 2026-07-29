@@ -1,4 +1,5 @@
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -280,6 +281,65 @@ def test_gemini_provider_classifies_runtime_errors(
     assert raised.value.reason_code is reason
     assert raised.value.retryable is retryable
     assert message not in str(raised.value)
+
+
+def test_gemini_provider_logs_redacted_traceback_in_development(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "private-gemini-key-marker"
+    bearer = "private-bearer-token-marker"
+    google_header = "private-google-header-marker"
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(
+            models=FailingGeminiModels(
+                RuntimeError(
+                    f"SDK failed api_key={secret} Authorization: Bearer {bearer} "
+                    f"x-goog-api-key: {google_header}"
+                )
+            )
+        ),
+        development_mode=True,
+    )
+
+    with caplog.at_level(
+        logging.ERROR,
+        logger="algohint.infrastructure.gemini_hint_provider",
+    ):
+        with pytest.raises(HintProviderError):
+            provider.generate(make_request())
+
+    assert "gemini_provider_exception" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "SDK failed" in caplog.text
+    assert "[REDACTED]" in caplog.text
+    assert secret not in caplog.text
+    assert bearer not in caplog.text
+    assert google_header not in caplog.text
+    assert "[REDACTED]]" not in caplog.text
+
+
+def test_gemini_provider_omits_raw_traceback_in_production(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(
+            models=FailingGeminiModels(RuntimeError("private-runtime-marker"))
+        ),
+    )
+
+    with caplog.at_level(
+        logging.ERROR,
+        logger="algohint.infrastructure.gemini_hint_provider",
+    ):
+        with pytest.raises(HintProviderError):
+            provider.generate(make_request())
+
+    assert "private-runtime-marker" not in caplog.text
+    assert "gemini_provider_exception" not in caplog.text
 
 
 @pytest.mark.parametrize(

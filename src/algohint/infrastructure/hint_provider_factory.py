@@ -24,5 +24,6 @@ def build_hint_providers(config: AppConfig) -> dict[HintProviderId, HintProvider
         HintProviderId.GEMINI: GeminiHintProvider(
             config.gemini_model,
             timeout_seconds=config.cloud_timeout_seconds,
+            development_mode=config.development_mode,
         ),
     }
