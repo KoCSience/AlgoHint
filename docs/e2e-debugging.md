@@ -18,8 +18,9 @@ AlgoHint Coachは、速さと検出範囲が異なる三層のE2Eでヒント機
 2. Gradio API E2E
 3. Playwright E2E
 4. `algohint doctor`
-5. Chrome DevTools MCPと実Geminiによる1回のヒント要求
-6. WSLホスト検証の完了後にDocker runtimeを再構築してスモーク確認
+5. 別ホストの実GemmaへSSHトンネル経由で1回のヒント要求
+6. Chrome DevTools MCPと実Geminiによる1回のヒント要求
+7. WSLホスト検証の完了後にDocker runtimeを再構築してスモーク確認
 
 前半三層は一時データディレクトリ、偽Gemini、一時ローカルポートを使います。
 実credentialsや外部通信を必要とせず、利用枠も消費しません。
@@ -158,6 +159,24 @@ uv run algohint doctor --provider gemini
 最小化するためです。網羅的な異常系と画面回帰は偽プロバイダで確認します。
 Chrome DevTools MCPの導入と操作は
 [Chrome DevTools MCPガイド](chrome-devtools-mcp.md)を参照してください。
+
+## 実Gemma Transformersサーバー
+
+vLLMが利用できない場合は、別LinuxホストのPyTorch／Transformers専用サーバーを使います。
+[Gemmaサーバー導入・運用ガイド](gemma-server.md)に従ってサーバーとSSHトンネルを
+起動し、Gemma用credentialsだけを読み込んだシェルで診断します。
+
+```bash
+uv run algohint doctor --provider gemma
+```
+
+成功後、隔離ChromeでGemmaを選び、外部送信へ同意して「わからない」を1回だけ要求します。
+画面に`gemma / google/gemma-4-12B`と生成ヒントが表示され、RuleBasedへ退避しないことを
+確認します。Chrome MCPはブラウザとGradio間だけを確認し、SSHトンネルより先の通信は
+AlgoHintログとリモートの安全化ログで突き合わせます。
+
+検証時もcredentials本文やAuthorizationヘッダーを表示しません。モデル応答の性能回帰と
+API配線の回帰を分けるため、異常系は偽クライアント、実モデルは1要求に限定します。
 
 ## 実行環境別の代替
 

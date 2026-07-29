@@ -28,14 +28,17 @@ LLMへ渡してよい情報は、学習者へ既に公開されている問題�
 | UI表示 | 内部ID | 既定モデル | 接続方式 |
 |---|---|---|---|
 | GPT-5.6 | `openai` | `gpt-5.6-sol` | OpenAI Responses API |
-| Gemma 4 12B | `gemma` | `google/gemma-4-12B-it` | 外部vLLMのOpenAI互換API |
+| Gemma 4 12B | `gemma` | `google/gemma-4-12B` | 外部vLLM／llama.cpp互換API、または専用Transformers HTTP API |
 | Gemini | `gemini` | `gemini-3.6-flash` | Google Gen AI SDK |
 
 モデルIDとGemmaの接続先は環境変数で上書きできます。プロバイダ実装は遅延初期化し、
 キーや外部サーバーがない状態でもアプリを起動できるようにします。
 
 Gemmaはアプリと同じプロセスや標準Composeサービスへ組み込みません。12Bモデルの
-メモリ要件を、512MBに制限したWebアプリと分離する意図です。
+メモリ要件を、512MBに制限したWebアプリと分離する意図です。vLLMが利用できない
+ホストでは、FastAPIが構造化JSONを担当し、Transformersモデルはプレーンテキストの
+ヒントだけを生成する専用サーバーを使います。詳細は
+[Gemmaサーバー導入・運用ガイド](gemma-server.md)を参照してください。
 
 ## ヒント生成フロー
 

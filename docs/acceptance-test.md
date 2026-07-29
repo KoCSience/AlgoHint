@@ -38,11 +38,15 @@
 - [ ] Playwright E2Eで同じ操作を実クリックでき、RE診断が実行結果ヒントへ渡る。
 - [ ] Playwright実行中にconsole error、HTTP 4xx/5xx、想定外の通信失敗がない。
 - [ ] Playwright失敗時のtraceとスクリーンショットを`/tmp/algohint-e2e/`へ保存し、秘密情報を含まないことを確認できる。
+- [ ] saekiのホーム配下だけへTransformers版Gemmaサーバーを配置し、固定revisionを3枚のGPUでロードできる。
+- [ ] Gemmaサーバーがリモートの`127.0.0.1:18080`だけで待ち受け、未認証要求を拒否する。
+- [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
+- [ ] Chrome MCPからGemmaへ「わからない」を1回だけ要求し、provider/modelと生成ヒントが表示され、RuleBasedへ退避しない。
 - [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。
 - [ ] 実Geminiのヒントとprovider/modelが画面に表示され、RuleBasedフォールバックがない。
 - [ ] Chrome MCPで画面、console、ブラウザからGradioへのnetworkを確認し、Gemini側はサーバーログと突き合わせる。
 - [ ] APIキー、認証ヘッダー、credentials内容がログ、trace、screenshotへ出ない。
-- [ ] READMEからE2EとChrome MCPの前提、導入、確認、障害対応、無効化・削除手順へ到達できる。
+- [ ] READMEからE2E、Chrome MCP、Gemmaサーバーの前提、導入、確認、障害対応、停止手順へ到達できる。
 
 ## Docker
 

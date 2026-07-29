@@ -41,6 +41,10 @@ uv run algohint
 [開発ガイド](docs/development.md#llm設定と秘密情報)を参照してください。キーがない場合も
 アプリは起動し、固定のRuleBasedヒントへ安全に退避します。
 
+vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
+構築する場合は、[Gemmaサーバー導入・運用ガイド](docs/gemma-server.md)を参照してください。
+saekiのホーム配下だけへ配置し、SSHトンネルで接続する構成を記載しています。
+
 Geminiの接続、キー、権限、モデル到達性だけを確認する場合は、学習者の問題文や
 コードを送らない診断コマンドを使用できます。
 

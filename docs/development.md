@@ -70,10 +70,12 @@ OPENAI_API_KEY='<OpenAIで発行したAPIキー>'
 # Geminiを利用する場合
 GEMINI_API_KEY='<Gemini用のAPIキー>'
 
-# Gemma 4 12Bを利用する場合
-ALGOHINT_GEMMA_BASE_URL='http://127.0.0.1:8000/v1'
+# Gemma 4 12BをTransformers専用サーバーで利用する場合
+ALGOHINT_GEMMA_BACKEND='transformers_http'
+ALGOHINT_GEMMA_DEPLOYMENT='remote'
+ALGOHINT_GEMMA_BASE_URL='http://127.0.0.1:18000/v1'
 
-# Gemmaサーバーが認証を要求する場合だけ設定
+# Transformers専用サーバーでは必須
 ALGOHINT_GEMMA_API_KEY='<Gemmaサーバー用のAPIキー>'
 
 # 任意設定: 起動時の既定プロバイダ
@@ -88,7 +90,7 @@ ALGOHINT_ENV='development'
 ```sh
 ALGOHINT_OPENAI_MODEL='gpt-5.6-sol'
 ALGOHINT_GEMINI_MODEL='gemini-3.6-flash'
-ALGOHINT_GEMMA_MODEL='google/gemma-4-12B-it'
+ALGOHINT_GEMMA_MODEL='google/gemma-4-12B'
 ```
 
 記述時は次の規則を守ります。
@@ -191,12 +193,33 @@ Geminiアダプタは、生成応答の`text`取得またはdoctorのモデル�
 [E2Eデバッグガイド](e2e-debugging.md)の偽プロバイダ回帰、doctor、実API 1要求の順で
 切り分けてください。
 
+### Gemma接続診断
+
+vLLMが導入できないLinuxホストでは、PyTorch／Hugging Face Transformers版の専用
+FastAPIサーバーを利用できます。saekiのホーム配下への配置、認証キー作成、
+固定revisionのモデル取得、SSHトンネル、起動・停止・ロールバックは
+[Gemmaサーバー導入・運用ガイド](gemma-server.md)を参照してください。
+
+SSHトンネルとGemmaサーバーを起動し、Gemma用credentialsを読み込んだ同じシェルで
+次を実行します。
+
+```bash
+uv run algohint doctor --provider gemma
+```
+
+doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
+成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を
+選択した場合、`ALGOHINT_GEMMA_API_KEY`は必須です。`remote`を明示すると、
+SSHトンネルのURLが`127.0.0.1`でもUIで外部送信同意を要求します。
+
 | 用途                  | 環境変数                                      | 秘密               |
 | --------------------- | --------------------------------------------- | ------------------ |
 | OpenAI                | `OPENAI_API_KEY`                              | はい               |
 | Gemini                | `GEMINI_API_KEY`                              | はい               |
 | 認証付きGemmaサーバー | `ALGOHINT_GEMMA_API_KEY`                      | サーバー構成による |
 | Gemma接続先           | `ALGOHINT_GEMMA_BASE_URL`                     | 通常はいいえ       |
+| Gemma実装方式         | `ALGOHINT_GEMMA_BACKEND`                      | いいえ             |
+| Gemma配置場所         | `ALGOHINT_GEMMA_DEPLOYMENT`                   | いいえ             |
 | 起動時のモデル選択    | `ALGOHINT_LLM_PROVIDER=openai\|gemma\|gemini` | いいえ             |
 | 開発プロフィール      | `ALGOHINT_ENV=development`                    | いいえ             |
 

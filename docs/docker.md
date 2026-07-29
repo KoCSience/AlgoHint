@@ -102,7 +102,16 @@ docker ps --filter name=algohint
 上の `--env OPENAI_API_KEY` はシェルに設定済みの値を渡す指定であり、値自体を
 コマンドラインへ書きません。GeminiまたはGemmaを使う場合は、同様に
 `GEMINI_API_KEY`、`ALGOHINT_GEMMA_BASE_URL`、必要なら
-`ALGOHINT_GEMMA_API_KEY`を渡します。
+`ALGOHINT_GEMMA_API_KEY`を渡します。別ホストのTransformersサーバーを使う場合は
+`ALGOHINT_GEMMA_BACKEND=transformers_http`と
+`ALGOHINT_GEMMA_DEPLOYMENT=remote`も渡します。
+
+Dockerコンテナ内の`127.0.0.1`はコンテナ自身を指すため、WSLホストの
+`127.0.0.1:18000`へ作成したSSHトンネルをそのまま参照できません。Dockerで実Gemmaを
+検証する場合は、トンネルの公開範囲と認証を別途設計してください。通常のDocker
+スモークではRuleBasedを使い、実GemmaのE2EはWSLホスト起動のAlgoHintで実施します。
+推論サーバーの構築手順は[Gemmaサーバー導入・運用ガイド](gemma-server.md)を
+参照してください。
 
 停止と再開ではボリュームを保持します。
 
