@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -10,8 +11,10 @@ from algohint.application.tutor_service import (
 from algohint.domain.enums import (
     HintProviderId,
     HintTrigger,
+    ProviderFailureReason,
     TutorRole,
 )
+from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
     GeneratedHint,
     HintGenerationRequest,
@@ -38,6 +41,7 @@ class FakeHintProvider:
         *,
         sends_data_off_device: bool = False,
         available: bool = True,
+        error: HintProviderError | None = None,
     ) -> None:
         self.text = text
         self.requests: list[HintGenerationRequest] = []
@@ -46,12 +50,15 @@ class FakeHintProvider:
             sends_data_off_device=sends_data_off_device,
             reason=None if available else "not configured",
         )
+        self.error = error
 
     def availability(self) -> ProviderAvailability:
         return self._availability
 
     def generate(self, request: HintGenerationRequest) -> GeneratedHint:
         self.requests.append(request)
+        if self.error is not None:
+            raise self.error
         return GeneratedHint(
             text=self.text,
             category=request.authored_hint.category,
@@ -161,3 +168,35 @@ def test_oversized_source_is_not_sent_to_provider(tmp_path: Path) -> None:
 
     assert reply.source_omitted
     assert provider.requests[0].source_code is None
+
+
+def test_classified_provider_failure_reaches_fallback_without_sensitive_logs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    provider = FakeHintProvider(
+        error=HintProviderError(
+            reason_code=ProviderFailureReason.AUTHENTICATION_OR_PERMISSION,
+            provider="gemini",
+            model="gemini-3.6-flash",
+            http_status=403,
+            exception_type="ClientError",
+        )
+    )
+    tutor, profile_id, _, _ = make_tutor(tmp_path, provider)
+
+    with caplog.at_level(logging.WARNING):
+        reply = tutor.request_hint(
+            profile_id,
+            "l0_two_values",
+            trigger=HintTrigger.STUCK,
+            source_code="private-source-marker",
+        )
+
+    assert reply.hint.used_fallback
+    assert reply.hint.fallback_reason == ProviderFailureReason.AUTHENTICATION_OR_PERMISSION.value
+    log_text = caplog.text
+    assert "provider=gemini" in log_text
+    assert "model=gemini-3.6-flash" in log_text
+    assert "reason_code=authentication_or_permission" in log_text
+    assert "http_status=403" in log_text
+    assert "private-source-marker" not in log_text

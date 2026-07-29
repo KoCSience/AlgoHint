@@ -4,6 +4,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from algohint.domain.enums import ProviderFailureReason
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
     GeneratedHint,
@@ -76,7 +77,12 @@ class OpenAIHintProvider:
             )
             payload = ProviderHintPayload.model_validate_json(response.output_text)
         except Exception as error:
-            raise HintProviderError("openai_request_failed") from error
+            raise HintProviderError(
+                reason_code=ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
+                provider="openai",
+                model=self._model,
+                exception_type=error.__class__.__name__,
+            ) from error
         return GeneratedHint(
             text=payload.text,
             category=payload.category,

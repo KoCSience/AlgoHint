@@ -11,6 +11,7 @@ from algohint.domain.enums import (
     HintCategory,
     HintProviderId,
     HintTrigger,
+    ProviderFailureReason,
     TutorRole,
 )
 from algohint.domain.errors import HintProviderError
@@ -166,22 +167,47 @@ class TutorService:
         request: HintGenerationRequest,
     ) -> GeneratedHint:
         fallback_reason: str | None = None
+        failure: HintProviderError | None = None
         if selected is None or availability is None or not availability.available:
             fallback_reason = "provider_unavailable"
         else:
             try:
                 generated = selected.generate(request)
-            except (HintProviderError, ValueError):
-                fallback_reason = "provider_error"
+            except HintProviderError as error:
+                failure = error
+                fallback_reason = error.reason_code.value
+            except ValueError as error:
+                failure = HintProviderError(
+                    reason_code=ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
+                    provider=selected.__class__.__name__,
+                    model="unknown",
+                    exception_type=error.__class__.__name__,
+                )
+                fallback_reason = failure.reason_code.value
             else:
                 if self._safety.is_safe(generated.text):
                     return generated
                 fallback_reason = "unsafe_output"
-        LOGGER.warning(
-            "hint_provider_fallback provider=%s reason=%s",
-            selected.__class__.__name__ if selected is not None else "missing",
-            fallback_reason,
-        )
+        if failure is not None:
+            LOGGER.warning(
+                (
+                    "hint_provider_fallback provider=%s model=%s reason_code=%s "
+                    "http_status=%s retryable=%s exception_type=%s"
+                ),
+                failure.provider,
+                failure.model,
+                failure.reason_code.value,
+                failure.http_status,
+                failure.retryable,
+                failure.exception_type,
+            )
+        else:
+            LOGGER.warning(
+                "hint_provider_fallback provider=%s model=%s reason_code=%s",
+                selected.__class__.__name__ if selected is not None else "missing",
+                generated.model_name if fallback_reason == "unsafe_output" else "unknown",
+                fallback_reason,
+            )
         fallback = self._fallback.generate(request)
         if not self._safety.is_safe(fallback.text):
             fallback = GeneratedHint(

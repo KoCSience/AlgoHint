@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from algohint.domain.enums import ProviderFailureReason
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
     GeneratedHint,
@@ -83,7 +84,12 @@ class GemmaHintProvider:
                 raise ValueError("missing response content")
             payload = ProviderHintPayload.model_validate_json(content)
         except Exception as error:
-            raise HintProviderError("gemma_request_failed") from error
+            raise HintProviderError(
+                reason_code=ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
+                provider="gemma",
+                model=self._model,
+                exception_type=error.__class__.__name__,
+            ) from error
         return GeneratedHint(
             text=payload.text,
             category=payload.category,

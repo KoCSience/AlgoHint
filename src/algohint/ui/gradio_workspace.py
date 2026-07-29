@@ -7,6 +7,7 @@ from algohint.application.tutor_service import CloudConsentRequiredError
 from algohint.domain.enums import (
     HintProviderId,
     HintTrigger,
+    ProviderFailureReason,
     SubmissionMode,
     TutorRole,
 )
@@ -20,6 +21,39 @@ PROVIDER_CHOICES = [
     ("Gemini", HintProviderId.GEMINI.value),
 ]
 PROVIDER_LABELS = {provider_id: label for label, provider_id in PROVIDER_CHOICES}
+FALLBACK_NOTICES = {
+    ProviderFailureReason.NOT_CONFIGURED.value: (
+        "モデルの接続設定がありません。環境変数を確認してください。"
+    ),
+    ProviderFailureReason.INVALID_REQUEST.value: (
+        "モデルへの要求形式が受理されませんでした。アプリとSDKの互換性を確認してください。"
+    ),
+    ProviderFailureReason.AUTHENTICATION_OR_PERMISSION.value: (
+        "APIキー、権限、または課金設定を確認してください。"
+    ),
+    ProviderFailureReason.MODEL_NOT_FOUND.value: (
+        "モデル名またはそのモデルへのアクセス権を確認してください。"
+    ),
+    ProviderFailureReason.RATE_OR_QUOTA_EXCEEDED.value: (
+        "利用上限に達しています。時間を置くか、レート制限と割当量を確認してください。"
+    ),
+    ProviderFailureReason.TIMEOUT.value: (
+        "モデルへの接続がタイムアウトしました。ネットワークを確認して再試行してください。"
+    ),
+    ProviderFailureReason.PROVIDER_UNAVAILABLE.value: (
+        "モデルが一時的に利用できません。時間を置いて再試行してください。"
+    ),
+    ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE.value: (
+        "モデルの応答が空、または安全設定によりブロックされました。"
+    ),
+    ProviderFailureReason.INVALID_STRUCTURED_RESPONSE.value: (
+        "モデルの応答形式を検証できませんでした。"
+    ),
+    ProviderFailureReason.UNKNOWN_PROVIDER_ERROR.value: (
+        "モデル呼び出しで分類できないエラーが発生しました。doctor診断を実行してください。"
+    ),
+    "unsafe_output": "答え漏洩の可能性がある応答を表示しませんでした。",
+}
 
 
 def _format_curriculum_item(item: dict[str, object]) -> str:
@@ -54,6 +88,15 @@ def _format_tutor_session(session: TutorSession) -> list[dict[str, str]]:
             content += f"\n\n— {message.provider} / {message.model_name}"
         messages.append({"role": message.role.value, "content": content})
     return messages
+
+
+def _format_fallback_notice(reason_code: str | None) -> str:
+    """Map a safe reason code to an actionable message without raw provider data."""
+
+    detail = (
+        FALLBACK_NOTICES.get(reason_code) if reason_code is not None else None
+    ) or "選択モデルを利用できませんでした。接続設定を確認してください。"
+    return f"{detail} RuleBasedヒントを表示しました。"
 
 
 def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bool) -> gr.Blocks:
@@ -281,7 +324,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return _format_tutor_session(session), str(error), question_text
             notices: list[str] = []
             if reply.hint.used_fallback:
-                notices.append("選択モデルを利用できなかったため、RuleBasedヒントを表示しました。")
+                notices.append(_format_fallback_notice(reply.hint.fallback_reason))
             if reply.source_omitted:
                 notices.append("コードが16KiBを超えたため、コード本文はモデルへ送りませんでした。")
             return (

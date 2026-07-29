@@ -2,12 +2,14 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from google.genai.errors import ClientError, ServerError
 
 from algohint.domain.enums import (
     HintCategory,
     HintProviderId,
     HintTrigger,
     JudgeStatus,
+    ProviderFailureReason,
 )
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import Hint, HintGenerationRequest
@@ -69,6 +71,23 @@ class FakeGeminiModels:
     def generate_content(self, **kwargs):
         self.kwargs = kwargs
         return SimpleNamespace(text=self.text)
+
+
+class FailingGeminiModels:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def generate_content(self, **kwargs):
+        raise self.error
+
+    def get(self, **kwargs):
+        raise self.error
+
+
+class BlockedGeminiResponse:
+    @property
+    def text(self) -> str:
+        raise ValueError("raw blocked response must remain private")
 
 
 def response_json(text: str = "最小ケースで変数の変化を追いましょう。") -> str:
@@ -137,6 +156,94 @@ def test_gemini_provider_requests_json_schema(
     config = models.kwargs["config"]
     assert isinstance(config, dict)
     assert config["response_mime_type"] == "application/json"
+
+
+@pytest.mark.parametrize(
+    ("status", "reason", "retryable"),
+    [
+        (400, ProviderFailureReason.INVALID_REQUEST, False),
+        (401, ProviderFailureReason.AUTHENTICATION_OR_PERMISSION, False),
+        (403, ProviderFailureReason.AUTHENTICATION_OR_PERMISSION, False),
+        (404, ProviderFailureReason.MODEL_NOT_FOUND, False),
+        (408, ProviderFailureReason.TIMEOUT, True),
+        (499, ProviderFailureReason.TIMEOUT, True),
+        (429, ProviderFailureReason.RATE_OR_QUOTA_EXCEEDED, True),
+        (500, ProviderFailureReason.PROVIDER_UNAVAILABLE, True),
+        (503, ProviderFailureReason.PROVIDER_UNAVAILABLE, True),
+        (504, ProviderFailureReason.TIMEOUT, True),
+    ],
+)
+def test_gemini_provider_classifies_api_errors(
+    status: int,
+    reason: ProviderFailureReason,
+    retryable: bool,
+) -> None:
+    error_class = ServerError if status >= 500 else ClientError
+    api_error = error_class(
+        status,
+        {
+            "error": {
+                "code": status,
+                "status": "TEST_STATUS",
+                "message": "raw provider response must remain private",
+            }
+        },
+    )
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(models=FailingGeminiModels(api_error)),
+    )
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is reason
+    assert raised.value.http_status == status
+    assert raised.value.retryable is retryable
+    assert "raw provider response" not in str(raised.value)
+
+
+def test_gemini_provider_classifies_transport_timeout() -> None:
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(
+            models=FailingGeminiModels(TimeoutError("private network detail"))
+        ),
+    )
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is ProviderFailureReason.TIMEOUT
+    assert raised.value.retryable
+    assert "private network detail" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("response", "reason"),
+    [
+        (SimpleNamespace(text=""), ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE),
+        (BlockedGeminiResponse(), ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE),
+        (SimpleNamespace(text="not-json"), ProviderFailureReason.INVALID_STRUCTURED_RESPONSE),
+        (
+            SimpleNamespace(text='{"text":"ヒント","category":"unknown"}'),
+            ProviderFailureReason.INVALID_STRUCTURED_RESPONSE,
+        ),
+    ],
+)
+def test_gemini_provider_classifies_invalid_responses(
+    response: object, reason: ProviderFailureReason
+) -> None:
+    models = SimpleNamespace(generate_content=lambda **kwargs: response)
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(models=models),
+    )
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is reason
 
 
 def test_invalid_provider_response_is_a_recoverable_error() -> None:

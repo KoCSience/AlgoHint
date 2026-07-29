@@ -14,6 +14,7 @@ from algohint.domain.enums import (
     HintProviderId,
     HintTrigger,
     JudgeStatus,
+    ProviderFailureReason,
     TestVisibility,
     TutorRole,
 )
@@ -123,6 +124,18 @@ class ProviderAvailability(FrozenModel):
     available: bool
     reason: str | None = None
     sends_data_off_device: bool = False
+
+
+class ProviderDiagnostic(FrozenModel):
+    """Secret-free provider reachability result for the doctor command."""
+
+    healthy: bool
+    provider: str
+    model: str
+    reason_code: ProviderFailureReason | None = None
+    http_status: int | None = None
+    retryable: bool = False
+    exception_type: str | None = None
 
 
 class HintGenerationRequest(FrozenModel):

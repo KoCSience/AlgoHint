@@ -118,6 +118,42 @@ uv run algohint
 開かず、起動時のプロセス環境だけを参照します。読み込み後に別用途のコマンドを実行する
 場合は、キーがその子プロセスにも渡る点に注意してください。
 
+### Gemini接続診断
+
+GeminiがRuleBasedヒントへ退避する場合は、同じシェルで次を実行します。
+
+```bash
+uv run algohint doctor --provider gemini
+```
+
+doctorは設定中のモデル情報を取得し、APIキーの存在、認証・権限、モデル到達性、
+ネットワークを確認します。問題文、提出コード、質問、会話履歴は送信しません。
+成功時は終了コード`0`、失敗時は`1`を返し、APIキーやGoogleの生レスポンスを
+表示しません。
+
+```text
+Gemini診断: OK provider=gemini model=gemini-3.6-flash
+```
+
+失敗時は、次の安全化された`reason_code`に従って対処します。
+
+| reason_code | 主な意味 | 対処 |
+|---|---|---|
+| `not_configured` | キーがプロセスへ渡っていない | credentialsを同じシェルで読み込み直す |
+| `invalid_request` | SDKとAPIの要求形式が不整合 | 依存ロックとモデル設定を確認する |
+| `authentication_or_permission` | キー不正、権限不足、課金・地域条件 | Google AI Studioのキー、プロジェクト、課金を確認する |
+| `model_not_found` | モデル名またはアクセス権が不正 | `ALGOHINT_GEMINI_MODEL`と利用可能モデルを確認する |
+| `rate_or_quota_exceeded` | レートまたは割当量超過 | 時間を置き、利用上限と課金枠を確認する |
+| `timeout` | 通信または応答のタイムアウト | ネットワークを確認して再実行する |
+| `provider_unavailable` | Gemini側の一時障害 | 時間を置き、サービス状態を確認する |
+| `empty_or_blocked_response` | 空応答または安全設定によるブロック | 質問内容を見直し、再試行する |
+| `invalid_structured_response` | 応答JSONが共通スキーマ不適合 | SDK・モデル互換性を確認する |
+| `unknown_provider_error` | 上記以外 | 例外クラスと実行環境を確認する |
+
+ログにもprovider、model、reason_code、HTTPステータス、再試行可能性、例外クラスだけを
+記録します。APIキー、プロンプト、コード、生レスポンスは記録しません。429と5xxの
+再試行はGoogle SDKへ任せ、AlgoHintから重複して再試行しません。
+
 | 用途                  | 環境変数                                      | 秘密               |
 | --------------------- | --------------------------------------------- | ------------------ |
 | OpenAI                | `OPENAI_API_KEY`                              | はい               |

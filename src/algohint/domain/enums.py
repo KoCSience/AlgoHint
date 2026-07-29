@@ -52,6 +52,21 @@ class HintProviderId(StrEnum):
     GEMINI = "gemini"
 
 
+class ProviderFailureReason(StrEnum):
+    """Safe provider failure categories suitable for logs and learner UI."""
+
+    NOT_CONFIGURED = "not_configured"
+    INVALID_REQUEST = "invalid_request"
+    AUTHENTICATION_OR_PERMISSION = "authentication_or_permission"
+    MODEL_NOT_FOUND = "model_not_found"
+    RATE_OR_QUOTA_EXCEEDED = "rate_or_quota_exceeded"
+    TIMEOUT = "timeout"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    EMPTY_OR_BLOCKED_RESPONSE = "empty_or_blocked_response"
+    INVALID_STRUCTURED_RESPONSE = "invalid_structured_response"
+    UNKNOWN_PROVIDER_ERROR = "unknown_provider_error"
+
+
 class HintTrigger(StrEnum):
     """The learner action that requested adaptive coaching."""
 

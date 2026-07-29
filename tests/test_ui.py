@@ -18,6 +18,7 @@ from algohint.infrastructure.json_tutor_session_repository import (
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
 from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
 from algohint.ui.gradio_app import build_app
+from algohint.ui.gradio_workspace import _format_fallback_notice
 from algohint.ui.view_models import ApplicationServices
 
 
@@ -54,3 +55,11 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "ヒントモデル" in config_text
     assert "わからない（次のヒント）" in config_text
     assert "実行結果からヒント" in config_text
+
+
+def test_fallback_notice_is_actionable_without_raw_provider_data() -> None:
+    notice = _format_fallback_notice("authentication_or_permission")
+
+    assert "APIキー、権限、または課金設定" in notice
+    assert "RuleBased" in notice
+    assert "raw" not in notice

@@ -1,6 +1,7 @@
 """Command-line composition root for AlgoHint Coach."""
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 
 from algohint.application.config import AppConfig
@@ -12,6 +13,7 @@ from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.hint_provider_factory import build_hint_providers
+from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
@@ -43,14 +45,54 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Override ALGOHINT_ENV for profile and development behavior",
     )
+    commands = parser.add_subparsers(dest="command")
+    doctor = commands.add_parser(
+        "doctor",
+        help="Diagnose provider configuration without sending learner content",
+    )
+    doctor.add_argument(
+        "--provider",
+        choices=("gemini",),
+        required=True,
+        help="Provider to diagnose",
+    )
     return parser
 
 
-def main() -> None:
+def _run_gemini_doctor(provider: GeminiHintProvider) -> int:
+    """Print only classified diagnostic metadata and return a shell status."""
+
+    diagnostic = provider.diagnose()
+    if diagnostic.healthy:
+        print(f"Gemini診断: OK provider={diagnostic.provider} model={diagnostic.model}")
+        return 0
+    reason = diagnostic.reason_code.value if diagnostic.reason_code else "unknown"
+    status = diagnostic.http_status if diagnostic.http_status is not None else "-"
+    exception_type = diagnostic.exception_type or "-"
+    print(
+        "Gemini診断: NG "
+        f"provider={diagnostic.provider} model={diagnostic.model} "
+        f"reason_code={reason} http_status={status} "
+        f"retryable={str(diagnostic.retryable).lower()} "
+        f"exception_type={exception_type}"
+    )
+    return 1
+
+
+def main(argv: Sequence[str] | None = None) -> None:
     """Assemble concrete adapters and launch the Gradio application."""
 
-    args = _parser().parse_args()
+    args = _parser().parse_args(argv)
     config = AppConfig.from_environment(args.environment)
+    if args.command == "doctor":
+        provider = GeminiHintProvider(
+            config.gemini_model,
+            timeout_seconds=config.cloud_timeout_seconds,
+        )
+        status = _run_gemini_doctor(provider)
+        if status:
+            raise SystemExit(status)
+        return
     paths = DataPaths(args.data_dir)
     problems = JsonProblemRepository(paths)
     profile_repository = JsonProfileRepository(paths)
