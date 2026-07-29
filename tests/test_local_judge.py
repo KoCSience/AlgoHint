@@ -1,3 +1,5 @@
+import pytest
+
 from algohint.domain.enums import JudgeStatus, TestVisibility as Visibility
 from algohint.domain.models import JudgePolicy, TestCase as JudgeTestCase
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
@@ -49,3 +51,25 @@ def test_judge_reports_timeout() -> None:
     )
 
     assert result.status is JudgeStatus.TLE
+
+
+def test_judge_does_not_inherit_llm_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Learner code receives a minimal environment, not the web app's keys."""
+
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-submission")
+    result = LocalJudgeRunner().judge(
+        "import os\nprint(os.environ.get('OPENAI_API_KEY', 'not-set'))",
+        [
+            JudgeTestCase(
+                case_id="environment",
+                input_text="",
+                expected_output="not-set\n",
+                visibility=Visibility.SAMPLE,
+            )
+        ],
+        JudgePolicy(),
+    )
+
+    assert result.status is JudgeStatus.AC

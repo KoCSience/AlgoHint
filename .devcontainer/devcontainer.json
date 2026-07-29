@@ -16,7 +16,11 @@
         "RUFF_CACHE_DIR": "/tmp/algohint-ruff-cache",
         "MYPY_CACHE_DIR": "/tmp/algohint-mypy-cache",
         "GRADIO_ANALYTICS_ENABLED": "False",
-        "ALGOHINT_ENV": "development"
+        "ALGOHINT_ENV": "development",
+        "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
+        "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+        "ALGOHINT_GEMMA_API_KEY": "${localEnv:ALGOHINT_GEMMA_API_KEY}",
+        "ALGOHINT_GEMMA_BASE_URL": "${localEnv:ALGOHINT_GEMMA_BASE_URL}"
     },
     "remoteUser": "algohint",
     "updateRemoteUserUID": true,

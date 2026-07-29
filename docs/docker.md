@@ -8,6 +8,11 @@ Docker EngineとDocker Compose v2互換の`docker compose`サブコマンドを�
 
 ## Docker Compose
 
+利用するキーをホーム側から起動シェルへ読み込んでからComposeを実行すると、
+`compose.yaml`の受け口がコンテナへ引き継ぎます。Composeファイル、イメージ、
+名前付きボリュームにはキーを保存しません。変数名とホーム管理の例は
+[開発ガイド](development.md#llm設定と秘密情報)を参照してください。
+
 ビルドしてバックグラウンド起動します。
 
 ```bash
@@ -57,9 +62,15 @@ docker run --detach \
   --pids-limit 128 \
   --memory 512m \
   --cpus 1 \
+  --env OPENAI_API_KEY \
   algohint:local
 docker ps --filter name=algohint
 ```
+
+上の `--env OPENAI_API_KEY` はシェルに設定済みの値を渡す指定であり、値自体を
+コマンドラインへ書きません。GeminiまたはGemmaを使う場合は、同様に
+`GEMINI_API_KEY`、`ALGOHINT_GEMMA_BASE_URL`、必要なら
+`ALGOHINT_GEMMA_API_KEY`を渡します。
 
 停止と再開ではボリュームを保持します。
 
@@ -141,6 +152,7 @@ docker system df --verbose
 - `error getting credentials`とWSLのvsockエラーが出る: Docker設定のJSON構文を直し、Docker Desktopを再起動してWSL側のターミナルを開き直します。
 - ポート7860が使用中: 既存のAlgoHintコンテナを停止するか、Composeとdocker runのどちらか一方だけを起動します。
 - `unhealthy`になる: `docker compose logs app`でGradioの起動エラーと、ボリュームの書き込み権限を確認します。
+- モデルが「利用不可」になる: コンテナ内に必要な変数名が渡っているかを確認します。値そのものはログや問い合わせへ貼り付けないでください。
 - 依存関係を更新した: `uv.lock`を更新・検証した後、`docker compose build --no-cache app`で再構築します。
 
 ## WSLが応答しなくなる場合

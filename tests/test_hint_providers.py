@@ -109,6 +109,17 @@ def test_gemma_provider_uses_configured_openai_compatible_endpoint() -> None:
     assert completions.kwargs["model"] == "google/gemma-4-12B-it"
 
 
+def test_remote_gemma_endpoint_requires_off_device_consent() -> None:
+    """A future remote vLLM host must not inherit the local-server trust level."""
+
+    availability = GemmaHintProvider(
+        "google/gemma-4-12B-it", "https://gemma.example.test/v1"
+    ).availability()
+
+    assert availability.available
+    assert availability.sends_data_off_device
+
+
 def test_gemini_provider_requests_json_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -158,4 +169,5 @@ def test_unconfigured_providers_report_safe_readiness(
     assert not OpenAIHintProvider("gpt-5.6-sol").availability().available
     assert not GeminiHintProvider("gemini-3.6-flash").availability().available
     assert not GemmaHintProvider("gemma", "").availability().available
+    assert not GemmaHintProvider("gemma", "not-a-url").availability().available
     assert HintProviderId.OPENAI.value == "openai"

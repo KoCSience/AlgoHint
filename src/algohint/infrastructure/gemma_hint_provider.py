@@ -3,6 +3,7 @@
 import os
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
@@ -34,12 +35,15 @@ class GemmaHintProvider:
         self._client_factory = client_factory
 
     def availability(self) -> ProviderAvailability:
-        """Report endpoint configuration without performing startup network I/O."""
+        """Classify loopback separately so remote Gemma endpoints require consent."""
 
+        parsed = urlparse(self._base_url)
+        configured = parsed.scheme in {"http", "https"} and parsed.hostname is not None
+        loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
         return ProviderAvailability(
-            available=bool(self._base_url),
-            reason=None if self._base_url else "Gemmaの接続先が設定されていません。",
-            sends_data_off_device=False,
+            available=configured,
+            reason=None if configured else "Gemmaの有効なHTTP接続先が設定されていません。",
+            sends_data_off_device=configured and not loopback,
         )
 
     def _client(self):
