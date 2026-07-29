@@ -19,12 +19,12 @@ FastAPIがJSON APIを担当し、モデルにはJSON生成を要求しません�
 | Python | 3.10以上 |
 | uv | `0.11.25`以上 |
 | GPU | NVIDIA RTX A4000 16 GiB × 3 |
-| モデル | `google/gemma-4-12B` |
-| revision | `023679ed352de9bb66cc873c9009ce3482585c08` |
+| モデル | `google/gemma-4-12B-it` |
+| revision | `707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7` |
 | 待受 | `127.0.0.1:18080` |
 | WSL側トンネル | `127.0.0.1:18000` |
 
-モデルIDとrevisionはHugging Faceの公式Gemma 4 12Bチェックポイントに固定します。
+モデルIDとrevisionはHugging Faceの公式Gemma 4 12B instruction-tunedチェックポイントに固定します。
 movingな`main`を直接使わず、再起動時に重みや設定が無断で変わることを防ぎます。
 
 ## ホーム配下の構造
@@ -106,7 +106,7 @@ if [ ! -e "$credentials" ]; then
   {
     printf "ALGOHINT_GEMMA_API_KEY='%s'\n" "$token"
     printf "ALGOHINT_GEMMA_MODEL_REVISION='%s'\n" \
-      '023679ed352de9bb66cc873c9009ce3482585c08'
+      '707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7'
   } >"$credentials"
   unset token
 fi
@@ -150,8 +150,8 @@ ALGOHINT_GEMMA_OFFLOAD_DIR="$app_root/runtime/offload" \
 app_root="$HOME/programs/algohint-gemma-server"
 HF_HOME="$app_root/cache/huggingface" \
 "$app_root/.venv/bin/hf" download \
-  google/gemma-4-12B \
-  --revision 023679ed352de9bb66cc873c9009ce3482585c08
+  google/gemma-4-12B-it \
+  --revision 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7
 ```
 
 ## 起動
@@ -215,7 +215,7 @@ export ALGOHINT_ENV='development'
 export ALGOHINT_GEMMA_BACKEND='transformers_http'
 export ALGOHINT_GEMMA_DEPLOYMENT='remote'
 export ALGOHINT_GEMMA_BASE_URL='http://127.0.0.1:18000/v1'
-export ALGOHINT_GEMMA_MODEL='google/gemma-4-12B'
+export ALGOHINT_GEMMA_MODEL='google/gemma-4-12B-it'
 export ALGOHINT_GEMMA_TIMEOUT_SECONDS='180'
 
 uv run algohint doctor --provider gemma
@@ -224,7 +224,7 @@ uv run algohint
 
 `remote`を明示するため、SSHトンネルのURLがループバックでもUIは外部送信の同意を
 要求します。ブラウザでGemmaを選択し、同意後に「わからない」を1回実行して、
-`gemma / google/gemma-4-12B`と生成ヒントが表示されることを確認します。
+`gemma / google/gemma-4-12B-it`と生成ヒントが表示されることを確認します。
 
 ## 更新とロールバック
 
@@ -279,4 +279,4 @@ WSL側のSSHトンネルは専用ターミナルで`Ctrl-C`を押して終了し
 
 参考:
 [Gemmaモデル導入](https://ai.google.dev/gemma/docs/get_started)、
-[Gemma 4 12Bモデルカード](https://huggingface.co/google/gemma-4-12B)
+[Gemma 4 12B ITモデルカード](https://huggingface.co/google/gemma-4-12B-it)

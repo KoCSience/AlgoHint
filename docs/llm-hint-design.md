@@ -28,7 +28,7 @@ LLMへ渡してよい情報は、学習者へ既に公開されている問題�
 | UI表示 | 内部ID | 既定モデル | 接続方式 |
 |---|---|---|---|
 | GPT-5.6 | `openai` | `gpt-5.6-sol` | OpenAI Responses API |
-| Gemma 4 12B | `gemma` | `google/gemma-4-12B` | 外部vLLM／llama.cpp互換API、または専用Transformers HTTP API |
+| Gemma 4 12B | `gemma` | `google/gemma-4-12B-it` | 外部vLLM／llama.cpp互換API、または専用Transformers HTTP API |
 | Gemini | `gemini` | `gemini-3.6-flash` | Google Gen AI SDK |
 
 モデルIDとGemmaの接続先は環境変数で上書きできます。プロバイダ実装は遅延初期化し、

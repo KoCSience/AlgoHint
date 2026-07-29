@@ -20,10 +20,10 @@ def _positive_int(name: str, default: int, *, maximum: int) -> int:
 class ServerConfig:
     """Validated operational settings; the API key is deliberately hidden from repr."""
 
-    model_id: str = "google/gemma-4-12B"
+    model_id: str = "google/gemma-4-12B-it"
     # Pin the verified public checkpoint so a server restart cannot silently
     # download a behaviorally different model from the moving main branch.
-    model_revision: str = "023679ed352de9bb66cc873c9009ce3482585c08"
+    model_revision: str = "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
     api_key: str = field(default="", repr=False)
     max_input_tokens: int = 8_192
     max_new_tokens: int = 384

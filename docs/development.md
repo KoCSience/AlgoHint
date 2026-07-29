@@ -90,7 +90,7 @@ ALGOHINT_ENV='development'
 ```sh
 ALGOHINT_OPENAI_MODEL='gpt-5.6-sol'
 ALGOHINT_GEMINI_MODEL='gemini-3.6-flash'
-ALGOHINT_GEMMA_MODEL='google/gemma-4-12B'
+ALGOHINT_GEMMA_MODEL='google/gemma-4-12B-it'
 ```
 
 記述時は次の規則を守ります。

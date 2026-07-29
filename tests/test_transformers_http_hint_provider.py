@@ -19,7 +19,7 @@ from algohint.infrastructure.transformers_http_hint_provider import (
 )
 
 API_KEY = "private-test-key-that-is-long-enough"
-MODEL = "google/gemma-4-12B"
+MODEL = "google/gemma-4-12B-it"
 
 
 def make_request() -> HintGenerationRequest:

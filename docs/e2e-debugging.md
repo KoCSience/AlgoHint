@@ -171,7 +171,7 @@ uv run algohint doctor --provider gemma
 ```
 
 成功後、隔離ChromeでGemmaを選び、外部送信へ同意して「わからない」を1回だけ要求します。
-画面に`gemma / google/gemma-4-12B`と生成ヒントが表示され、RuleBasedへ退避しないことを
+画面に`gemma / google/gemma-4-12B-it`と生成ヒントが表示され、RuleBasedへ退避しないことを
 確認します。Chrome MCPはブラウザとGradio間だけを確認し、SSHトンネルより先の通信は
 AlgoHintログとリモートの安全化ログで突き合わせます。
 
