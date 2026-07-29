@@ -1,0 +1,41 @@
+[project]
+name = "algohint-gemma-server"
+version = "0.1.0"
+description = "Private Transformers inference service for AlgoHint Gemma hints"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "accelerate>=1.12.0,<2",
+    "fastapi>=0.128.0,<1",
+    "pydantic>=2.13.4,<3",
+    "torch==2.13.0",
+    "transformers==5.14.1",
+    "uvicorn>=0.40.0,<1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.25,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1,<1",
+    "mypy>=2.2.0,<3",
+    "pytest>=9.1.1,<10",
+    "ruff>=0.15.0,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+check_untyped_defs = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["torch", "transformers"]
+ignore_missing_imports = true
