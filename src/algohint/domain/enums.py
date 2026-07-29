@@ -52,6 +52,22 @@ class HintProviderId(StrEnum):
     GEMINI = "gemini"
 
 
+class GemmaBackend(StrEnum):
+    """Supported transport contracts for separately managed Gemma servers."""
+
+    VLLM = "vllm"
+    LLAMA_CPP = "llama_cpp"
+    TRANSFORMERS_HTTP = "transformers_http"
+
+
+class GemmaDeployment(StrEnum):
+    """Data-location policy kept separate from the endpoint URL."""
+
+    AUTO = "auto"
+    LOCAL = "local"
+    REMOTE = "remote"
+
+
 class ProviderFailureReason(StrEnum):
     """Safe provider failure categories suitable for logs and learner UI."""
 

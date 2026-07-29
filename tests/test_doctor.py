@@ -29,6 +29,9 @@ def test_doctor_parser_requires_supported_provider() -> None:
     assert args.provider == "gemini"
     assert args.verbose
 
+    gemma = _parser().parse_args(["doctor", "--provider", "gemma"])
+    assert gemma.provider == "gemma"
+
 
 def test_gemini_doctor_succeeds_without_generation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -162,3 +165,21 @@ def test_main_doctor_returns_nonzero_for_missing_key(
 
     assert raised.value.code == 1
     assert "reason_code=not_configured" in capsys.readouterr().out
+
+
+def test_main_gemma_doctor_returns_nonzero_without_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_BACKEND", "transformers_http")
+    monkeypatch.setenv("ALGOHINT_GEMMA_DEPLOYMENT", "remote")
+    monkeypatch.setenv("ALGOHINT_GEMMA_BASE_URL", "http://127.0.0.1:18000/v1")
+    monkeypatch.delenv("ALGOHINT_GEMMA_API_KEY", raising=False)
+
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["doctor", "--provider", "gemma"])
+
+    assert raised.value.code == 1
+    output = capsys.readouterr().out
+    assert "Gemma診断: NG" in output
+    assert "reason_code=not_configured" in output

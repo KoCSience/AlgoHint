@@ -3,6 +3,7 @@
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol, cast
 
 from algohint.application.config import AppConfig
 from algohint.application.explanation_service import ExplanationService
@@ -11,6 +12,7 @@ from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
+from algohint.domain.enums import HintProviderId
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.hint_provider_factory import build_hint_providers
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
@@ -52,7 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     doctor.add_argument(
         "--provider",
-        choices=("gemini",),
+        choices=("gemini", "gemma"),
         required=True,
         help="Provider to diagnose",
     )
@@ -64,28 +66,34 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_gemini_doctor(
-    provider: GeminiHintProvider,
+class _DiagnosableProvider(Protocol):
+    """Provider surface used by doctor without coupling CLI to one SDK."""
+
+    def diagnose(self, *, verbose: bool = False): ...
+
+
+def _run_provider_doctor(
+    label: str,
+    provider: _DiagnosableProvider,
     *,
     verbose: bool = False,
     development_mode: bool = False,
 ) -> int:
-    """Print diagnostics, allowing redacted details only in development."""
+    """Print one provider-neutral, secret-free diagnostic summary."""
 
     detailed = verbose and development_mode
     diagnostic = provider.diagnose(verbose=detailed)
     if diagnostic.healthy:
         print(
-            "Gemini診断: OK "
-            f"provider={diagnostic.provider} model={diagnostic.model} "
-            "backend=developer_api"
+            f"{label}診断: OK "
+            f"provider={diagnostic.provider} model={diagnostic.model}"
         )
         return 0
     reason = diagnostic.reason_code.value if diagnostic.reason_code else "unknown"
     status = diagnostic.http_status if diagnostic.http_status is not None else "-"
     exception_type = diagnostic.exception_type or "-"
     print(
-        "Gemini診断: NG "
+        f"{label}診断: NG "
         f"provider={diagnostic.provider} model={diagnostic.model} "
         f"reason_code={reason} http_status={status} "
         f"retryable={str(diagnostic.retryable).lower()} "
@@ -94,9 +102,25 @@ def _run_gemini_doctor(
     if verbose and not development_mode:
         print("詳細診断はdevelopmentでのみ有効です。ALGOHINT_ENV=developmentを設定してください。")
     elif diagnostic.debug_details is not None:
-        print("Gemini診断詳細（認証情報は伏字化済み）:")
+        print(f"{label}診断詳細（認証情報は伏字化済み）:")
         print(diagnostic.debug_details, end="" if diagnostic.debug_details.endswith("\n") else "\n")
     return 1
+
+
+def _run_gemini_doctor(
+    provider: GeminiHintProvider,
+    *,
+    verbose: bool = False,
+    development_mode: bool = False,
+) -> int:
+    """Compatibility wrapper retained for focused Gemini doctor tests."""
+
+    return _run_provider_doctor(
+        "Gemini",
+        provider,
+        verbose=verbose,
+        development_mode=development_mode,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -105,12 +129,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
     config = AppConfig.from_environment(args.environment)
     if args.command == "doctor":
-        provider = GeminiHintProvider(
-            config.gemini_model,
-            timeout_seconds=config.cloud_timeout_seconds,
-            development_mode=config.development_mode,
-        )
-        status = _run_gemini_doctor(
+        if args.provider == "gemini":
+            provider: _DiagnosableProvider = GeminiHintProvider(
+                config.gemini_model,
+                timeout_seconds=config.cloud_timeout_seconds,
+                development_mode=config.development_mode,
+            )
+            label = "Gemini"
+        else:
+            gemma_provider = build_hint_providers(config)[HintProviderId.GEMMA]
+            if not hasattr(gemma_provider, "diagnose"):
+                raise RuntimeError("configured Gemma provider does not support doctor")
+            provider = cast(_DiagnosableProvider, gemma_provider)
+            label = "Gemma"
+        status = _run_provider_doctor(
+            label,
             provider,
             verbose=args.verbose,
             development_mode=config.development_mode,

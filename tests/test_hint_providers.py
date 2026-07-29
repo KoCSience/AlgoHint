@@ -6,6 +6,8 @@ import pytest
 from google.genai.errors import ClientError, ServerError
 
 from algohint.domain.enums import (
+    GemmaBackend,
+    GemmaDeployment,
     HintCategory,
     HintProviderId,
     HintTrigger,
@@ -196,6 +198,37 @@ def test_remote_gemma_endpoint_requires_off_device_consent() -> None:
 
     assert availability.available
     assert availability.sends_data_off_device
+
+
+def test_tunneled_remote_gemma_requires_consent() -> None:
+    availability = GemmaHintProvider(
+        "google/gemma-4-12B-it",
+        "http://127.0.0.1:18000/v1",
+        deployment=GemmaDeployment.REMOTE,
+    ).availability()
+
+    assert availability.available
+    assert availability.sends_data_off_device
+
+
+def test_llama_cpp_uses_its_documented_schema_dialect() -> None:
+    completions = FakeGemmaCompletions(response_json())
+    provider = GemmaHintProvider(
+        "google/gemma-4-12B-it",
+        "http://127.0.0.1:8000/v1",
+        backend=GemmaBackend.LLAMA_CPP,
+        client_factory=lambda: SimpleNamespace(
+            chat=SimpleNamespace(completions=completions)
+        ),
+    )
+
+    provider.generate(make_request())
+
+    assert "max_tokens" in completions.kwargs
+    response_format = completions.kwargs["response_format"]
+    assert isinstance(response_format, dict)
+    assert "schema" in response_format
+    assert "json_schema" not in response_format
 
 
 def test_gemini_provider_requests_json_schema(
