@@ -89,8 +89,9 @@ ALGOHINT_RUN_BROWSER_E2E=1 uv run pytest tests/test_browser_e2e.py -vv \
   --output=/tmp/algohint-e2e
 ```
 
-このテストは開発プロフィール、問題選択、Gemini選択、送信同意、質問、
-「わからない」、RE実行結果からのヒント、履歴消去を実ブラウザで操作します。
+このテストは開発プロフィール、問題選択、Gemini選択、送信同意、Ctrl+Enter質問、
+「わからない」、RE実行結果からのヒント、全テストAC、完了後AIコードレビュー、
+履歴消去を実ブラウザで操作します。
 RE診断がヒント要求へ渡ることに加え、console error、HTTP 4xx/5xx、
 想定外の通信失敗がないことも確認します。
 

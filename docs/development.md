@@ -3,10 +3,14 @@
 ## 構成
 
 - `src/algohint/domain/`: UI非依存のモデル、状態、ポート
-- `src/algohint/application/`: 問題選択、提出、Tutor、解説、レポートのユースケース
-- `src/algohint/infrastructure/`: JSON、LocalJudge、固定／外部LLMヒント
+- `src/algohint/application/`: 問題選択、提出、Tutor、完了後復習、レポートのユースケース
+- `src/algohint/infrastructure/`: JSON／SQLite、LocalJudge、固定／外部LLM学習支援
 - `src/algohint/ui/`: Gradio画面と表示整形
 - `data/`: 自作教材。実行時ログは `data/runtime/`
+
+プロフィール設定の `last_problem_id` は画面復元専用であり、進捗モデルへ移さないでください。
+復習解禁は `CompletionReviewService` が `ProblemProgress` を再確認します。状態分類と
+依存方向は[アーキテクチャ](architecture.md#状態の分類)を参照してください。
 
 ## 検証
 
@@ -18,6 +22,13 @@ uv run pytest
 uv run ruff check .
 uv run mypy src
 uv lock --check
+```
+
+Gemma専用サーバーを変更した場合は、その独立したロック環境でも検証します。
+
+```bash
+uv run --project services/gemma-transformers-server \
+  pytest -q services/gemma-transformers-server/tests
 ```
 
 ヒント機能を変更した場合は、通常テストに加えてGradio API E2Eと、明示的に有効化する
@@ -37,7 +48,11 @@ uv export --frozen --no-dev --no-emit-project \
 uvx pip-audit --requirement /tmp/algohint-runtime-requirements.txt
 ```
 
-新しい問題を追加したら、`data/problems/<problem_id>/` に4ファイルを作成し、`data/curriculum.json` の順序へIDを追加します。問題データを読み込むテストと、正解・境界・誤答のJudgeテストも追加してください。
+新しい問題を追加したら、`data/problems/<problem_id>/` に `problem.json`、
+`samples.json`、`hidden_tests.json`、`model_solution.py`、`review.json` の5ファイルを作成し、
+`data/curriculum.json` の順序へIDを追加します。問題データを読み込むテスト、固定5問の
+検証、正解・境界・誤答のJudgeテストも追加してください。詳細は
+[教材作成ガイド](data-and-content-authoring.md)を参照してください。
 
 ## LLM設定と秘密情報
 

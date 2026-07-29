@@ -116,6 +116,7 @@ def test_hint_coach_in_rendered_browser(
     question.press("Enter")
     expect(question).to_have_value("どの変数を追えばよいですか？\n")
     question.press("Control+Enter")
+    expect(page.locator("#tutor-chat")).to_contain_text("どの変数を追えばよいですか？")
     expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
     expect(question).to_have_value("")
 
@@ -126,7 +127,7 @@ def test_hint_coach_in_rendered_browser(
     expect(page.locator("#submission-result")).to_contain_text("RE")
 
     page.locator("#result-hint").click()
-    expect(page.locator("#tutor-status")).to_contain_text("ヒントを表示しました")
+    expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
     expect(page.locator("#tutor-chat")).to_contain_text("この実行結果についてヒントがほしい")
     assert [request.trigger for request in provider.requests] == [
         HintTrigger.STUCK,
@@ -135,6 +136,15 @@ def test_hint_coach_in_rendered_browser(
     ]
     assert provider.requests[-1].diagnostic_summary == "ValueError"
     assert "visible sample failure" in (provider.requests[-1].diagnostic_details or "")
+
+    editor.fill("a, b = map(int, input().split())\nprint(a + b)")
+    page.locator("#full-submit").click()
+    expect(page.locator("#submission-result")).to_contain_text("AC")
+    expect(page.get_by_text("5問すべてに回答して", exact=False)).to_be_visible()
+    expect(page.locator("#current-code-review")).to_contain_text(
+        "アルゴリズムの復習"
+    )
+    assert len(provider.review_requests) == 1
 
     page.locator("#clear-tutor-history").click()
     expect(page.locator("#tutor-status")).to_contain_text("クリア")
