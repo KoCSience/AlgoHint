@@ -38,7 +38,7 @@ class GeminiHintProvider:
     def availability(self) -> ProviderAvailability:
         """Report configuration presence without exposing the credential value."""
 
-        configured = bool(os.environ.get("GEMINI_API_KEY"))
+        configured = bool(os.environ.get("GEMINI_API_KEY", "").strip())
         return ProviderAvailability(
             available=configured,
             reason=None if configured else "GEMINI_API_KEYが設定されていません。",
@@ -52,7 +52,12 @@ class GeminiHintProvider:
         from google.genai import types
 
         return genai.Client(
-            api_key=os.environ["GEMINI_API_KEY"],
+            # AlgoHint's Gemini adapter intentionally uses the Developer API.
+            # Explicit flags prevent ambient Vertex/Enterprise settings from
+            # switching authentication to Google Cloud access tokens.
+            api_key=os.environ["GEMINI_API_KEY"].strip(),
+            vertexai=False,
+            enterprise=False,
             http_options=types.HttpOptions(timeout=int(self._timeout_seconds * 1_000)),
         )
 
@@ -156,6 +161,24 @@ class GeminiHintProvider:
                 provider="gemini",
                 model=self._model,
                 retryable=True,
+                exception_type=error.__class__.__name__,
+            )
+        if isinstance(error, RuntimeError):
+            message = str(error)
+            if "Could not resolve API token from the environment" in message:
+                reason_code = ProviderFailureReason.AUTHENTICATION_OR_PERMISSION
+                retryable = False
+            elif message.startswith("Operation ") and " timed out." in message:
+                reason_code = ProviderFailureReason.TIMEOUT
+                retryable = True
+            else:
+                reason_code = ProviderFailureReason.UNKNOWN_PROVIDER_ERROR
+                retryable = False
+            return HintProviderError(
+                reason_code=reason_code,
+                provider="gemini",
+                model=self._model,
+                retryable=retryable,
                 exception_type=error.__class__.__name__,
             )
         return HintProviderError(

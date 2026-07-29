@@ -158,6 +158,31 @@ def test_gemini_provider_requests_json_schema(
     assert config["response_mime_type"] == "application/json"
 
 
+def test_gemini_provider_pins_developer_api_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ambient Vertex settings must not replace the configured API-key flow."""
+
+    from google import genai
+
+    monkeypatch.setenv("GEMINI_API_KEY", "  test-only-placeholder  ")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
+    captured: dict[str, object] = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(genai, "Client", fake_client)
+
+    GeminiHintProvider("gemini-3.6-flash")._client()
+
+    assert captured["api_key"] == "test-only-placeholder"
+    assert captured["vertexai"] is False
+    assert captured["enterprise"] is False
+
+
 @pytest.mark.parametrize(
     ("status", "reason", "retryable"),
     [
@@ -220,6 +245,44 @@ def test_gemini_provider_classifies_transport_timeout() -> None:
 
 
 @pytest.mark.parametrize(
+    ("message", "reason", "retryable"),
+    [
+        (
+            "Could not resolve API token from the environment",
+            ProviderFailureReason.AUTHENTICATION_OR_PERMISSION,
+            False,
+        ),
+        (
+            "Operation operations/123 timed out.\nprivate operation state",
+            ProviderFailureReason.TIMEOUT,
+            True,
+        ),
+        (
+            "unexpected SDK runtime failure",
+            ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
+            False,
+        ),
+    ],
+)
+def test_gemini_provider_classifies_runtime_errors(
+    message: str,
+    reason: ProviderFailureReason,
+    retryable: bool,
+) -> None:
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(models=FailingGeminiModels(RuntimeError(message))),
+    )
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is reason
+    assert raised.value.retryable is retryable
+    assert message not in str(raised.value)
+
+
+@pytest.mark.parametrize(
     ("response", "reason"),
     [
         (SimpleNamespace(text=""), ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE),
@@ -278,3 +341,11 @@ def test_unconfigured_providers_report_safe_readiness(
     assert not GemmaHintProvider("gemma", "").availability().available
     assert not GemmaHintProvider("gemma", "not-a-url").availability().available
     assert HintProviderId.OPENAI.value == "openai"
+
+
+def test_gemini_provider_rejects_whitespace_only_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", " \t ")
+
+    assert not GeminiHintProvider("gemini-3.6-flash").availability().available
