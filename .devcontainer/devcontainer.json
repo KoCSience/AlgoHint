@@ -15,7 +15,8 @@
         "UV_CACHE_DIR": "/tmp/algohint-uv-cache",
         "RUFF_CACHE_DIR": "/tmp/algohint-ruff-cache",
         "MYPY_CACHE_DIR": "/tmp/algohint-mypy-cache",
-        "GRADIO_ANALYTICS_ENABLED": "False"
+        "GRADIO_ANALYTICS_ENABLED": "False",
+        "ALGOHINT_ENV": "development"
     },
     "remoteUser": "algohint",
     "updateRemoteUserUID": true,

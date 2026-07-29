@@ -45,10 +45,15 @@ class SubprocessExecutor:
     def _resource_limits(policy: JudgePolicy) -> None:
         """Apply POSIX limits in the child process where they are available."""
 
-        resource.setrlimit(resource.RLIMIT_CPU, (max(1, int(policy.timeout_seconds) + 1), max(2, int(policy.timeout_seconds) + 2)))
+        resource.setrlimit(
+            resource.RLIMIT_CPU,
+            (max(1, int(policy.timeout_seconds) + 1), max(2, int(policy.timeout_seconds) + 2)),
+        )
         memory_bytes = policy.memory_limit_mb * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (policy.output_limit_bytes, policy.output_limit_bytes))
+        resource.setrlimit(
+            resource.RLIMIT_FSIZE, (policy.output_limit_bytes, policy.output_limit_bytes)
+        )
 
     @staticmethod
     def _truncate(text: str, limit: int) -> str:
@@ -88,9 +93,10 @@ class SubprocessExecutor:
                 started = time.monotonic()
                 # Files, unlike pipes, are constrained by RLIMIT_FSIZE on POSIX.
                 # This avoids buffering unbounded learner output in the web process.
-                with (directory / "stdout.txt").open("w+b") as stdout_file, (
-                    directory / "stderr.txt"
-                ).open("w+b") as stderr_file:
+                with (
+                    (directory / "stdout.txt").open("w+b") as stdout_file,
+                    (directory / "stderr.txt").open("w+b") as stderr_file,
+                ):
                     process = subprocess.Popen(
                         command,
                         cwd=directory,

@@ -10,6 +10,7 @@ from algohint.domain.models import (
     LearningLog,
     Problem,
     Profile,
+    ProfilePreferences,
     TestCase,
 )
 
@@ -29,15 +30,23 @@ class ProblemRepository(Protocol):
 
 
 class LearningLogRepository(Protocol):
-    """Persist profiles and aggregate logs without storing learner source code."""
-
-    def list_profiles(self) -> list[Profile]: ...
-
-    def create_profile(self, display_name: str) -> Profile: ...
+    """Persist aggregate logs without storing learner source code."""
 
     def load_log(self, profile_id: str) -> LearningLog: ...
 
     def save_log(self, log: LearningLog) -> None: ...
+
+
+class ProfileRepository(Protocol):
+    """Persist local identities and preferences separately from learning metrics."""
+
+    def list_profiles(self) -> list[Profile]: ...
+
+    def get_profile(self, profile_id: str) -> Profile: ...
+
+    def create_profile(self, display_name: str, preferences: ProfilePreferences) -> Profile: ...
+
+    def save_profile(self, profile: Profile) -> None: ...
 
 
 class JudgeRunner(Protocol):

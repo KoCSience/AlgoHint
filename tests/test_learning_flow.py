@@ -9,6 +9,7 @@ from algohint.domain.enums import JudgeStatus, SubmissionMode
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
+from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
 
 
@@ -17,8 +18,10 @@ DATA_DIR = Path(__file__).parents[1] / "data"
 
 def make_services(tmp_path: Path):
     problems = JsonProblemRepository(DataPaths(DATA_DIR))
-    logs = JsonLearningLogRepository(DataPaths(tmp_path / "runtime-data"))
-    profile = ProfileService(logs).create_profile("学習者")
+    paths = DataPaths(tmp_path / "runtime-data")
+    profile_repository = JsonProfileRepository(paths)
+    logs = JsonLearningLogRepository(paths, profile_repository)
+    profile = ProfileService(profile_repository, logs).create_profile("学習者")
     return problems, logs, profile
 
 
@@ -58,8 +61,10 @@ def test_hint_explanation_and_report_flow(tmp_path: Path) -> None:
 
 def test_profiles_have_separate_logs(tmp_path: Path) -> None:
     problems = JsonProblemRepository(DataPaths(DATA_DIR))
-    logs = JsonLearningLogRepository(DataPaths(tmp_path / "runtime-data"))
-    profiles = ProfileService(logs)
+    paths = DataPaths(tmp_path / "runtime-data")
+    profile_repository = JsonProfileRepository(paths)
+    logs = JsonLearningLogRepository(paths, profile_repository)
+    profiles = ProfileService(profile_repository, logs)
     first = profiles.create_profile("一人目")
     second = profiles.create_profile("二人目")
 

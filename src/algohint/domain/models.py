@@ -8,7 +8,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from algohint.domain.enums import CompareMode, HintCategory, JudgeStatus, TestVisibility
+from algohint.domain.enums import (
+    CompareMode,
+    HintCategory,
+    HintProviderId,
+    JudgeStatus,
+    TestVisibility,
+)
 
 
 class FrozenModel(BaseModel):
@@ -90,12 +96,20 @@ class LLMResponse(FrozenModel):
     provider: str
 
 
+class ProfilePreferences(FrozenModel):
+    """Persisted learner choices that never imply consent to cloud transmission."""
+
+    hint_provider: HintProviderId = HintProviderId.OPENAI
+
+
 class Profile(FrozenModel):
     """A local, non-authenticated learner identity."""
 
-    profile_id: str
+    profile_id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
     display_name: str = Field(min_length=1, max_length=40)
     created_at: datetime
+    preferences: ProfilePreferences = Field(default_factory=ProfilePreferences)
+    is_development: bool = False
 
 
 class ProblemProgress(FrozenModel):

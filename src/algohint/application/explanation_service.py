@@ -17,7 +17,9 @@ class ExplanationService:
         log = self._logs.load_log(profile_id)
         current = log.progress.get(problem_id, ProblemProgress())
         updated = current.model_copy(update={"gave_up": True, "completed_at": datetime.now(UTC)})
-        self._logs.save_log(log.model_copy(update={"progress": {**log.progress, problem_id: updated}}))
+        self._logs.save_log(
+            log.model_copy(update={"progress": {**log.progress, problem_id: updated}})
+        )
 
     def get_explanation(self, profile_id: str, problem_id: str) -> str | None:
         progress = self._logs.load_log(profile_id).progress.get(problem_id, ProblemProgress())

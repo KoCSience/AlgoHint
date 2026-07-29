@@ -42,5 +42,7 @@ class HintService:
         else:
             hint = hint.model_copy(update={"leak_checked": True})
         updated = progress.model_copy(update={"hint_count": progress.hint_count + 1})
-        self._logs.save_log(log.model_copy(update={"progress": {**log.progress, problem_id: updated}}))
+        self._logs.save_log(
+            log.model_copy(update={"progress": {**log.progress, problem_id: updated}})
+        )
         return hint

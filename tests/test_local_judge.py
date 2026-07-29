@@ -20,7 +20,9 @@ CASES = [
 
 
 def test_judge_accepts_correct_code_and_trimmed_output() -> None:
-    result = LocalJudgeRunner().judge("a, b = map(int, input().split())\nprint(a + b, '  ')", CASES, JudgePolicy())
+    result = LocalJudgeRunner().judge(
+        "a, b = map(int, input().split())\nprint(a + b, '  ')", CASES, JudgePolicy()
+    )
 
     assert result.status is JudgeStatus.AC
     assert result.passed_count == 2
@@ -42,6 +44,8 @@ def test_judge_reports_runtime_and_compile_errors() -> None:
 
 
 def test_judge_reports_timeout() -> None:
-    result = LocalJudgeRunner().judge("while True:\n    pass", CASES, JudgePolicy(timeout_seconds=0.2))
+    result = LocalJudgeRunner().judge(
+        "while True:\n    pass", CASES, JudgePolicy(timeout_seconds=0.2)
+    )
 
     assert result.status is JudgeStatus.TLE

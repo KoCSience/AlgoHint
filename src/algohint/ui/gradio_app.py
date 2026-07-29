@@ -2,9 +2,9 @@
 
 import gradio as gr
 
+from algohint.domain.enums import SubmissionMode
 from algohint.ui.formatters import format_hint, format_problem, format_report, format_submission
 from algohint.ui.view_models import ApplicationServices
-from algohint.domain.enums import SubmissionMode
 
 
 def _format_curriculum_item(item: dict[str, object]) -> str:
@@ -21,6 +21,7 @@ def _format_curriculum_item(item: dict[str, object]) -> str:
 def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bool) -> gr.Blocks:
     """Build the MVP UI without exposing private judge data in learner callbacks."""
 
+    default_profile = services.profiles.default_profile()
     profiles = services.profiles.list_profiles()
     profile_choices = [(profile.display_name, profile.profile_id) for profile in profiles]
     problems = services.problems.list_problems()
@@ -45,7 +46,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             profile_selector = gr.Dropdown(
                 choices=profile_choices,
                 label="プロフィール",
-                value=profile_choices[0][1] if profiles else None,
+                value=default_profile.profile_id if default_profile is not None else None,
             )
             profile_name = gr.Textbox(label="新しいプロフィール名", max_length=40)
             create_profile = gr.Button("プロフィールを作成")

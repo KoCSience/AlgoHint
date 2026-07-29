@@ -42,3 +42,11 @@ class SubmissionMode(StrEnum):
 
     SAMPLE = "sample"
     FULL = "full"
+
+
+class HintProviderId(StrEnum):
+    """Learner-selectable adaptive hint providers."""
+
+    OPENAI = "openai"
+    GEMMA = "gemma"
+    GEMINI = "gemini"

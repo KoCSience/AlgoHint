@@ -36,8 +36,12 @@ class LearningReportService:
             attempted_count=attempted,
             solved_count=solved,
             correctness_rate=solved / attempted if attempted else 0.0,
-            average_hint_count=sum(value.hint_count for value in values) / attempted if attempted else 0.0,
-            average_attempt_count=sum(value.attempt_count for value in values) / attempted if attempted else 0.0,
+            average_hint_count=sum(value.hint_count for value in values) / attempted
+            if attempted
+            else 0.0,
+            average_attempt_count=sum(value.attempt_count for value in values) / attempted
+            if attempted
+            else 0.0,
             weak_tags=tuple(weak_tags.most_common()),
             recommended_problem_id=next_problem,
         )
