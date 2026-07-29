@@ -108,13 +108,15 @@ def test_hint_coach_in_rendered_browser(
 
     page.locator("#cloud-consent input").check()
     page.locator("#stuck-hint").click()
-    expect(page.locator("#tutor-status")).to_contain_text("ヒントを表示しました")
+    expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
     expect(page.locator("#tutor-chat")).to_contain_text("gemini / gemini-e2e")
 
     question = page.locator("#tutor-question textarea")
     question.fill("どの変数を追えばよいですか？")
-    page.locator("#ask-question").click()
-    expect(page.locator("#tutor-status")).to_contain_text("ヒントを表示しました")
+    question.press("Enter")
+    expect(question).to_have_value("どの変数を追えばよいですか？\n")
+    question.press("Control+Enter")
+    expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
     expect(question).to_have_value("")
 
     editor = page.locator("#code-editor .cm-content")

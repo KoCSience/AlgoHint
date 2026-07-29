@@ -73,17 +73,12 @@ class TutorService:
     ) -> TutorReply:
         """Generate one hint without persisting source code or raw diagnostics."""
 
-        cleaned_question = self._validated_question(trigger, question)
-        profile = self._profiles.get_profile(profile_id)
-        selected = self._providers.get(profile.preferences.hint_provider)
-        selected_availability = selected.availability() if selected else None
-        if (
-            selected_availability is not None
-            and selected_availability.sends_data_off_device
-            and not cloud_consent
-        ):
-            # Consent remains session-scoped; a stored provider preference is not permission.
-            raise CloudConsentRequiredError("クラウド送信への同意が必要です。")
+        cleaned_question, selected, selected_availability = self.validate_request(
+            profile_id,
+            trigger=trigger,
+            question=question,
+            cloud_consent=cloud_consent,
+        )
 
         log = self._logs.load_log(profile_id)
         progress = log.progress.get(problem_id, ProblemProgress())
@@ -137,6 +132,29 @@ class TutorService:
             log.model_copy(update={"progress": {**log.progress, problem_id: updated_progress}})
         )
         return TutorReply(hint=hint, session=updated_session, source_omitted=source_omitted)
+
+    def validate_request(
+        self,
+        profile_id: str,
+        *,
+        trigger: HintTrigger,
+        question: str | None,
+        cloud_consent: bool,
+    ) -> tuple[str | None, HintProvider | None, ProviderAvailability | None]:
+        """Validate a pending UI turn before it is shown optimistically."""
+
+        cleaned_question = self._validated_question(trigger, question)
+        profile = self._profiles.get_profile(profile_id)
+        selected = self._providers.get(profile.preferences.hint_provider)
+        availability = selected.availability() if selected else None
+        if (
+            availability is not None
+            and availability.sends_data_off_device
+            and not cloud_consent
+        ):
+            # Consent remains session-scoped; a stored provider preference is not permission.
+            raise CloudConsentRequiredError("クラウド送信への同意が必要です。")
+        return cleaned_question, selected, availability
 
     def load_session(self, profile_id: str, problem_id: str):
         """Load a conversation for profile/problem changes in the UI."""

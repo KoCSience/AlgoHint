@@ -61,6 +61,8 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "二つの数の合計" in config_text
     assert "わからない（次のヒント）" in config_text
     assert "実行結果からヒント" in config_text
+    assert "Ctrl+Enter" in config_text
+    assert "algohintShortcutBound" in config_text
 
 
 def test_fallback_notice_is_actionable_without_raw_provider_data() -> None:

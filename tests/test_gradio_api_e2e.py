@@ -92,7 +92,7 @@ def test_tutor_flow_through_named_gradio_apis(
     )
     assert len(stuck[0]) == 2
     assert "gemini / gemini-e2e" in _chat_text(stuck[0][1])
-    assert stuck[1] == "ヒントを表示しました。"
+    assert "回答を表示しました" in stuck[1]
 
     asked = gradio_client.predict(
         PROFILE_ID,
@@ -103,6 +103,7 @@ def test_tutor_flow_through_named_gradio_apis(
         api_name="/ask_tutor",
     )
     assert len(asked[0]) == 4
+    assert "回答を表示しました" in asked[1]
     assert asked[2] == ""
 
     execution = gradio_client.predict(

@@ -1,5 +1,8 @@
 """Contextual Gradio workspace for execution, diagnostics, tutoring, and explanation."""
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Iterator
 from typing import Any, cast
 
 import gradio as gr
@@ -59,6 +62,28 @@ FALLBACK_NOTICES = {
     ),
     "unsafe_output": "答え漏洩の可能性がある応答を表示しませんでした。",
 }
+QUESTION_SHORTCUT_SCRIPT = """
+() => {
+  const bindShortcut = () => {
+    const input = document.querySelector("#tutor-question textarea");
+    if (!input || input.dataset.algohintShortcutBound === "true") return;
+    input.dataset.algohintShortcutBound = "true";
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      const button = document.querySelector(
+        "button#ask-question, #ask-question button, #ask-question"
+      );
+      if (button instanceof HTMLElement) button.click();
+    });
+  };
+  bindShortcut();
+  new MutationObserver(bindShortcut).observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}
+""".strip()
 
 
 def _format_curriculum_item(item: dict[str, object]) -> str:
@@ -253,6 +278,9 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     question = gr.Textbox(
                         label="質問",
                         placeholder="例: このループで何を数えるべきですか？",
+                        info="Enterで改行、Ctrl+Enter（MacはCmd+Enter）で送信します。",
+                        lines=3,
+                        max_lines=8,
                         max_length=1_000,
                         elem_id="tutor-question",
                     )
@@ -447,31 +475,79 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             consent: bool,
             diagnostic: LearnerDiagnostic | None,
             trigger: HintTrigger,
-        ):
+        ) -> Iterator[tuple[list[dict[str, str]], str, str]]:
             if not profile_id or not problem_id:
-                return [], "プロフィールと問題を選択してください。", question_text
+                yield [], "プロフィールと問題を選択してください。", question_text
+                return
             try:
-                reply = services.tutor.request_hint(
+                cleaned_question, _, _ = services.tutor.validate_request(
                     profile_id,
-                    problem_id,
                     trigger=trigger,
-                    source_code=source,
                     question=question_text if trigger is HintTrigger.QUESTION else None,
-                    diagnostic=diagnostic,
                     cloud_consent=consent,
                 )
             except (CloudConsentRequiredError, ValueError) as error:
                 session = services.tutor.load_session(profile_id, problem_id)
-                return _format_tutor_session(session), str(error), question_text
+                yield _format_tutor_session(session), str(error), question_text
+                return
+
+            current = services.tutor.load_session(profile_id, problem_id)
+            pending_messages = _format_tutor_session(current)
+            if trigger is HintTrigger.QUESTION and cleaned_question is not None:
+                # Keep the pending turn browser-only. Persistence remains an
+                # assistant/user pair so interrupted generations leave no orphan.
+                pending_messages = [
+                    *pending_messages,
+                    {"role": TutorRole.USER.value, "content": cleaned_question},
+                ]
+            started = time.monotonic()
+            cleared_question = "" if trigger is HintTrigger.QUESTION else question_text
+            yield (
+                pending_messages,
+                "回答を生成中…（経過時間: 0 s）",
+                cleared_question,
+            )
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                services.tutor.request_hint,
+                profile_id,
+                problem_id,
+                trigger=trigger,
+                source_code=source,
+                question=question_text if trigger is HintTrigger.QUESTION else None,
+                diagnostic=diagnostic,
+                cloud_consent=consent,
+            )
+            try:
+                elapsed_seconds = 0
+                while not future.done():
+                    time.sleep(1)
+                    current_elapsed = int(time.monotonic() - started)
+                    if current_elapsed > elapsed_seconds and not future.done():
+                        elapsed_seconds = current_elapsed
+                        yield (
+                            pending_messages,
+                            f"回答を生成中…（経過時間: {elapsed_seconds} s）",
+                            cleared_question,
+                        )
+                reply = future.result()
+            except (CloudConsentRequiredError, ValueError) as error:
+                session = services.tutor.load_session(profile_id, problem_id)
+                yield _format_tutor_session(session), str(error), question_text
+                return
+            finally:
+                executor.shutdown(wait=True)
             notices: list[str] = []
             if reply.hint.used_fallback:
                 notices.append(_format_fallback_notice(reply.hint.fallback_reason))
             if reply.source_omitted:
                 notices.append("コードが16KiBを超えたため、コード本文はモデルへ送りませんでした。")
-            return (
+            elapsed = time.monotonic() - started
+            notices.append(f"回答を表示しました。（所要時間: {elapsed:.1f} s）")
+            yield (
                 _format_tutor_session(reply.session),
-                "\n\n".join(notices) or "ヒントを表示しました。",
-                "" if trigger is HintTrigger.QUESTION else question_text,
+                "\n\n".join(notices),
+                cleared_question,
             )
 
         def request_question(
@@ -481,10 +557,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             question_text: str,
             consent: bool,
             diagnostic: LearnerDiagnostic | None,
-        ):
+        ) -> Iterator[tuple[list[dict[str, str]], str, str]]:
             """Bind the explicit question trigger without obscuring callback types."""
 
-            return request_tutor_hint(
+            yield from request_tutor_hint(
                 profile_id,
                 problem_id,
                 source,
@@ -501,10 +577,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             question_text: str,
             consent: bool,
             diagnostic: LearnerDiagnostic | None,
-        ):
+        ) -> Iterator[tuple[list[dict[str, str]], str, str]]:
             """Bind the learner-initiated stuck trigger."""
 
-            return request_tutor_hint(
+            yield from request_tutor_hint(
                 profile_id,
                 problem_id,
                 source,
@@ -521,10 +597,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             question_text: str,
             consent: bool,
             diagnostic: LearnerDiagnostic | None,
-        ):
+        ) -> Iterator[tuple[list[dict[str, str]], str, str]]:
             """Bind the latest safe Judge diagnostic to a tutoring request."""
 
-            return request_tutor_hint(
+            yield from request_tutor_hint(
                 profile_id,
                 problem_id,
                 source,
@@ -642,6 +718,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             trigger_mode="once",
             concurrency_limit=1,
             concurrency_id="tutor-generation",
+            show_progress="hidden",
         )
         stuck.click(
             request_stuck_hint,
@@ -651,6 +728,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             trigger_mode="once",
             concurrency_limit=1,
             concurrency_id="tutor-generation",
+            show_progress="hidden",
         )
         result_hint.click(
             request_result_hint,
@@ -660,6 +738,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             trigger_mode="once",
             concurrency_limit=1,
             concurrency_id="tutor-generation",
+            show_progress="hidden",
         )
         clear_history.click(
             clear_tutor_history,
@@ -702,5 +781,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return f"## 隠しテスト\n{tests}\n\n## 模範解答\n```python\n{solution}\n```"
 
             problem_selector.change(show_teacher, inputs=problem_selector, outputs=teacher_result)
+
+        app.load(fn=None, js=QUESTION_SHORTCUT_SCRIPT, queue=False)
 
     return app.queue(default_concurrency_limit=1)
