@@ -11,10 +11,17 @@ from pydantic import ValidationError
 from algohint.domain.enums import ProviderFailureReason
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
+    CodeReviewRequest,
+    GeneratedCodeReview,
     GeneratedHint,
     HintGenerationRequest,
     ProviderAvailability,
     ProviderDiagnostic,
+)
+from algohint.infrastructure.code_review_prompt import (
+    CODE_REVIEW_INSTRUCTIONS,
+    ProviderCodeReviewPayload,
+    build_code_review_prompt,
 )
 from algohint.infrastructure.hint_prompt import (
     SYSTEM_INSTRUCTIONS,
@@ -162,6 +169,44 @@ class GeminiHintProvider:
             provider="gemini",
             model_name=self._model,
         )
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+        """Request and validate the completion-review contract."""
+
+        try:
+            with self._managed_client() as client:
+                response = client.models.generate_content(
+                    model=self._model,
+                    contents=build_code_review_prompt(request),
+                    config={
+                        "system_instruction": CODE_REVIEW_INSTRUCTIONS,
+                        "response_mime_type": "application/json",
+                        "response_json_schema": (
+                            ProviderCodeReviewPayload.model_json_schema()
+                        ),
+                        "max_output_tokens": 1_200,
+                    },
+                )
+                response_text = response.text
+        except HintProviderError:
+            raise
+        except Exception as error:
+            self._log_development_exception("generate_review", error)
+            raise self._classified_error(error) from error
+        if not isinstance(response_text, str) or not response_text.strip():
+            empty_error = ValueError("empty provider response")
+            raise self._response_error(
+                ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE,
+                empty_error,
+            ) from empty_error
+        try:
+            payload = ProviderCodeReviewPayload.model_validate_json(response_text)
+        except (ValidationError, ValueError) as error:
+            raise self._response_error(
+                ProviderFailureReason.INVALID_STRUCTURED_RESPONSE,
+                error,
+            ) from error
+        return payload.to_generated(provider="gemini", model_name=self._model)
 
     def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
         """Check key, permission, and model reachability without learner content."""

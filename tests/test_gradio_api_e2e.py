@@ -152,6 +152,18 @@ def test_tutor_flow_through_named_gradio_apis(
     assert "5/5" in quiz[0]
     assert "全1回" in quiz[1]
 
+    review = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "a, b = map(int, input().split())\nprint(a + b)",
+        True,
+        api_name="/retry_code_review",
+    )
+    assert "アルゴリズムの復習" in review[0]
+    assert "コードレビューを表示しました" in review[1]
+    assert "全1件" in review[2]
+    assert len(provider.review_requests) == 1
+
     cleared = gradio_client.predict(
         PROFILE_ID,
         PROBLEM_ID,

@@ -3,8 +3,18 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from algohint.application.profile_service import ProfileService
-from algohint.domain.enums import ReviewHistoryKind
-from algohint.domain.models import QuizAttempt, StoredQuizFeedback
+from algohint.domain.enums import (
+    CodeReviewCategory,
+    CompletionReason,
+    ReviewHistoryKind,
+)
+from algohint.domain.models import (
+    CodeReviewEntry,
+    CodeReviewPoint,
+    GeneratedCodeReview,
+    QuizAttempt,
+    StoredQuizFeedback,
+)
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
@@ -32,6 +42,26 @@ def make_attempt(attempted_at: datetime, marker: str) -> QuizAttempt:
         material_version=1,
         score=0,
         feedback=feedback,
+    )
+
+
+def make_code_review(reviewed_at: datetime, marker: str) -> CodeReviewEntry:
+    return CodeReviewEntry(
+        reviewed_at=reviewed_at,
+        completion_reason=CompletionReason.FULL_AC,
+        review=GeneratedCodeReview(
+            algorithm_recap=f"アルゴリズムの復習 {marker}",
+            strengths=("簡潔です。",),
+            improvements=(
+                CodeReviewPoint(
+                    category=CodeReviewCategory.READABILITY,
+                    title="命名",
+                    feedback="変数の役割が伝わる名前を維持しましょう。",
+                ),
+            ),
+            provider="fake",
+            model_name="fake-review",
+        ),
     )
 
 
@@ -158,4 +188,64 @@ def test_parallel_attempts_are_not_lost(tmp_path: Path) -> None:
             kind=ReviewHistoryKind.QUIZ_ATTEMPT.value,
         )
         == 8
+    )
+
+
+def test_quota_prunes_oldest_across_quiz_and_code_review_kinds(
+    tmp_path: Path,
+) -> None:
+    paths, profiles, profile_service = make_repositories(tmp_path)
+    measuring_profile = profile_service.create_profile("種類別計測")
+    measuring = SqliteReviewHistoryRepository(paths, profiles, quota_bytes=1_000_000)
+    base = datetime.now(UTC)
+    after_review = measuring.save_code_review(
+        measuring_profile.profile_id,
+        "l0_two_values",
+        make_code_review(base, "measure"),
+    ).used_bytes
+    after_both = measuring.save_quiz_attempt(
+        measuring_profile.profile_id,
+        "l0_two_values",
+        make_attempt(base, "measure"),
+    ).used_bytes
+    quiz_bytes = after_both - after_review
+
+    target = profile_service.create_profile("種類横断")
+    limited = SqliteReviewHistoryRepository(
+        paths,
+        profiles,
+        quota_bytes=after_review + quiz_bytes * 2 - 1,
+    )
+    limited.save_code_review(
+        target.profile_id,
+        "l0_two_values",
+        make_code_review(base - timedelta(days=2), "measure"),
+    )
+    limited.save_quiz_attempt(
+        target.profile_id,
+        "l0_two_values",
+        make_attempt(base - timedelta(days=1), "measure"),
+    )
+    status = limited.save_quiz_attempt(
+        target.profile_id,
+        "l0_two_values",
+        make_attempt(base, "measure"),
+    )
+
+    assert status.pruned_count == 1
+    assert (
+        limited.count_records(
+            target.profile_id,
+            "l0_two_values",
+            kind=ReviewHistoryKind.CODE_REVIEW.value,
+        )
+        == 0
+    )
+    assert (
+        limited.count_records(
+            target.profile_id,
+            "l0_two_values",
+            kind=ReviewHistoryKind.QUIZ_ATTEMPT.value,
+        )
+        == 2
     )

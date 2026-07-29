@@ -174,8 +174,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         selections=ExerciseSelectionService(profile_service, problem_service),
         reviews=CompletionReviewService(
             problems,
+            profile_repository,
             logs,
             SqliteReviewHistoryRepository(paths, profile_repository),
+            providers,
         ),
         problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),

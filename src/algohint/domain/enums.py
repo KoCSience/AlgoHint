@@ -114,3 +114,20 @@ class ReviewHistoryKind(StrEnum):
 
     QUIZ_ATTEMPT = "quiz_attempt"
     CODE_REVIEW = "code_review"
+
+
+class CompletionReason(StrEnum):
+    """Authoritative event that made completion review available."""
+
+    FULL_AC = "full_ac"
+    GAVE_UP = "gave_up"
+
+
+class CodeReviewCategory(StrEnum):
+    """Bounded dimensions for actionable post-completion feedback."""
+
+    CORRECTNESS = "correctness"
+    EDGE_CASES = "edge_cases"
+    COMPLEXITY = "complexity"
+    READABILITY = "readability"
+    MAINTAINABILITY = "maintainability"

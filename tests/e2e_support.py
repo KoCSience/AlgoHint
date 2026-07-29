@@ -16,10 +16,14 @@ from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
 from algohint.domain.enums import HintProviderId
 from algohint.domain.models import (
+    CodeReviewPoint,
+    CodeReviewRequest,
+    GeneratedCodeReview,
     GeneratedHint,
     HintGenerationRequest,
     ProviderAvailability,
 )
+from algohint.domain.enums import CodeReviewCategory
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
@@ -45,6 +49,7 @@ class DeterministicGeminiProvider:
 
     def __init__(self) -> None:
         self.requests: list[HintGenerationRequest] = []
+        self.review_requests: list[CodeReviewRequest] = []
 
     def availability(self) -> ProviderAvailability:
         return ProviderAvailability(
@@ -57,6 +62,24 @@ class DeterministicGeminiProvider:
         return GeneratedHint(
             text="小さな入力を手計算し、それぞれの変数が何を表すか確認しましょう。",
             category=request.authored_hint.category,
+            provider="gemini",
+            model_name="gemini-e2e",
+        )
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+        """Return deterministic completion feedback without retaining source text."""
+
+        self.review_requests.append(request)
+        return GeneratedCodeReview(
+            algorithm_recap="入力を整数へ変換し、必要な演算だけを行う問題です。",
+            strengths=("入出力の流れが簡潔です。",),
+            improvements=(
+                CodeReviewPoint(
+                    category=CodeReviewCategory.READABILITY,
+                    title="変数名の意図",
+                    feedback="問題文の値との対応が伝わる名前を維持しましょう。",
+                ),
+            ),
             provider="gemini",
             model_name="gemini-e2e",
         )
@@ -84,8 +107,10 @@ def build_e2e_app(runtime_root: Path):
         selections=ExerciseSelectionService(profile_service, problem_service),
         reviews=CompletionReviewService(
             problems,
+            profiles,
             logs,
             SqliteReviewHistoryRepository(runtime_paths, profiles),
+            {HintProviderId.GEMINI: provider},
         ),
         problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),

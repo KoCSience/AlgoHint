@@ -45,3 +45,13 @@ class HintResponse(FrozenContract):
     model: str
     text: str = Field(min_length=1, max_length=1_200)
 
+
+class ReviewRequest(HintRequest):
+    """Review generation uses the same bounded, option-free transport fields."""
+
+
+class ReviewResponse(FrozenContract):
+    """Structured-review JSON text validated again by the caller."""
+
+    model: str
+    text: str = Field(min_length=1, max_length=4_000)

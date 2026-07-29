@@ -13,13 +13,18 @@ class ExplanationService:
         self._problems = problems
         self._logs = logs
 
-    def give_up(self, profile_id: str, problem_id: str) -> None:
+    def give_up(self, profile_id: str, problem_id: str) -> bool:
+        """Mark surrender and report whether this is the first such transition."""
+
         log = self._logs.load_log(profile_id)
         current = log.progress.get(problem_id, ProblemProgress())
+        if current.gave_up:
+            return False
         updated = current.model_copy(update={"gave_up": True, "completed_at": datetime.now(UTC)})
         self._logs.save_log(
             log.model_copy(update={"progress": {**log.progress, problem_id: updated}})
         )
+        return True
 
     def get_explanation(self, profile_id: str, problem_id: str) -> str | None:
         progress = self._logs.load_log(profile_id).progress.get(problem_id, ProblemProgress())

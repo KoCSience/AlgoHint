@@ -9,6 +9,16 @@ from algohint.application.completion_review_service import (
 from algohint.application.profile_service import ProfileService
 from algohint.application.submission_service import SubmissionService
 from algohint.domain.enums import SubmissionMode
+from algohint.domain.enums import (
+    CodeReviewCategory,
+    HintProviderId,
+)
+from algohint.domain.models import (
+    CodeReviewPoint,
+    CodeReviewRequest,
+    GeneratedCodeReview,
+    ProviderAvailability,
+)
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
@@ -22,7 +32,38 @@ DATA_DIR = Path(__file__).parents[1] / "data"
 CORRECT_SOURCE = "a, b = map(int, input().split())\nprint(a + b)"
 
 
-def make_review_services(tmp_path: Path):
+class FakeReviewProvider:
+    def __init__(self, *, sends_data_off_device: bool = False) -> None:
+        self.requests: list[CodeReviewRequest] = []
+        self._availability = ProviderAvailability(
+            available=True,
+            sends_data_off_device=sends_data_off_device,
+        )
+
+    def availability(self) -> ProviderAvailability:
+        return self._availability
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+        self.requests.append(request)
+        return GeneratedCodeReview(
+            algorithm_recap="二つの整数を読み取り、和を出力する処理です。",
+            strengths=("処理が簡潔です。",),
+            improvements=(
+                CodeReviewPoint(
+                    category=CodeReviewCategory.READABILITY,
+                    title="名前の意図",
+                    feedback="入力値との対応が伝わる命名を維持しましょう。",
+                ),
+            ),
+            provider="fake",
+            model_name="fake-review",
+        )
+
+
+def make_review_services(
+    tmp_path: Path,
+    provider: FakeReviewProvider | None = None,
+):
     problems = JsonProblemRepository(DataPaths(DATA_DIR))
     runtime_paths = DataPaths(tmp_path / "runtime-data")
     profiles = JsonProfileRepository(runtime_paths)
@@ -31,8 +72,10 @@ def make_review_services(tmp_path: Path):
     return (
         CompletionReviewService(
             problems,
+            profiles,
             logs,
             SqliteReviewHistoryRepository(runtime_paths, profiles),
+            {HintProviderId.OPENAI: provider} if provider is not None else {},
         ),
         SubmissionService(problems, logs, LocalJudgeRunner()),
         problems,
@@ -83,3 +126,78 @@ def test_quiz_requires_completion_and_all_valid_answers(tmp_path: Path) -> None:
     assert all(item.correct for item in result.feedback)
     assert history.total_count == 1
     assert history.attempts[0].score == 5
+
+
+def test_code_review_requires_consent_and_persists_only_generated_feedback(
+    tmp_path: Path,
+) -> None:
+    provider = FakeReviewProvider(sends_data_off_device=True)
+    reviews, submissions, _, profile_id = make_review_services(tmp_path, provider)
+    submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+
+    with pytest.raises(PermissionError, match="同意"):
+        reviews.generate_code_review(
+            profile_id,
+            "l0_two_values",
+            CORRECT_SOURCE,
+            cloud_consent=False,
+        )
+
+    receipt = reviews.generate_code_review(
+        profile_id,
+        "l0_two_values",
+        CORRECT_SOURCE,
+        cloud_consent=True,
+    )
+    history = reviews.code_review_history(profile_id, "l0_two_values")
+
+    assert receipt.entry.review.provider == "fake"
+    assert history.total_count == 1
+    assert history.entries[0] == receipt.entry
+    assert provider.requests[0].source_code == CORRECT_SOURCE
+    assert CORRECT_SOURCE not in history.entries[0].model_dump_json()
+
+
+def test_code_review_rejects_provider_output_that_repeats_source(
+    tmp_path: Path,
+) -> None:
+    class QuotingProvider(FakeReviewProvider):
+        def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+            generated = super().generate_review(request)
+            return generated.model_copy(update={"algorithm_recap": request.source_code})
+
+    provider = QuotingProvider()
+    reviews, submissions, _, profile_id = make_review_services(tmp_path, provider)
+    submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+
+    with pytest.raises(RuntimeError, match="再掲"):
+        reviews.generate_code_review(
+            profile_id,
+            "l0_two_values",
+            CORRECT_SOURCE,
+            cloud_consent=False,
+        )
+
+    assert reviews.code_review_history(profile_id, "l0_two_values").total_count == 0
+
+
+def test_code_review_history_is_paginated_newest_first(tmp_path: Path) -> None:
+    provider = FakeReviewProvider()
+    reviews, submissions, _, profile_id = make_review_services(tmp_path, provider)
+    submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+
+    for _ in range(21):
+        reviews.generate_code_review(
+            profile_id,
+            "l0_two_values",
+            CORRECT_SOURCE,
+            cloud_consent=False,
+        )
+
+    newest_page = reviews.code_review_history(profile_id, "l0_two_values")
+    oldest_page = reviews.code_review_history(profile_id, "l0_two_values", page=1)
+
+    assert newest_page.total_count == 21
+    assert len(newest_page.entries) == newest_page.page_size == 20
+    assert len(oldest_page.entries) == 1
+    assert newest_page.entries[0].reviewed_at >= oldest_page.entries[0].reviewed_at

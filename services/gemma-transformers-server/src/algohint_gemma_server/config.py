@@ -26,7 +26,7 @@ class ServerConfig:
     model_revision: str = "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
     api_key: str = field(default="", repr=False)
     max_input_tokens: int = 8_192
-    max_new_tokens: int = 384
+    max_new_tokens: int = 600
     gpu_memory_gib: int = 14
     cpu_memory_gib: int = 64
     request_max_bytes: int = 98_304

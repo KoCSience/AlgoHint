@@ -3,6 +3,9 @@
 from typing import Protocol
 
 from algohint.domain.models import (
+    CodeReviewEntry,
+    CodeReviewRequest,
+    GeneratedCodeReview,
     GeneratedHint,
     HintGenerationRequest,
     JudgePolicy,
@@ -89,6 +92,13 @@ class ReviewHistoryRepository(Protocol):
         attempt: QuizAttempt,
     ) -> ReviewQuotaStatus: ...
 
+    def save_code_review(
+        self,
+        profile_id: str,
+        problem_id: str,
+        entry: CodeReviewEntry,
+    ) -> ReviewQuotaStatus: ...
+
     def list_records(
         self,
         profile_id: str,
@@ -110,6 +120,18 @@ class HintProvider(Protocol):
     def availability(self) -> ProviderAvailability: ...
 
     def generate(self, request: HintGenerationRequest) -> GeneratedHint: ...
+
+
+class CodeReviewProvider(Protocol):
+    """Generate completion feedback without receiving private judge assets."""
+
+    def availability(self) -> ProviderAvailability: ...
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview: ...
+
+
+class LearningProvider(HintProvider, CodeReviewProvider, Protocol):
+    """Provider supporting both isolated learning contracts."""
 
 
 class JudgeRunner(Protocol):

@@ -41,8 +41,10 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
             selections=ExerciseSelectionService(profile_service, problem_service),
             reviews=CompletionReviewService(
                 problems,
+                profile_repository,
                 logs,
                 SqliteReviewHistoryRepository(paths, profile_repository),
+                {},
             ),
             problems=problem_service,
             submissions=SubmissionService(problems, logs, LocalJudgeRunner()),

@@ -5,9 +5,11 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from threading import RLock
 
 from algohint.domain.enums import ReviewHistoryKind
 from algohint.domain.models import (
+    CodeReviewEntry,
     QuizAttempt,
     ReviewHistoryRecord,
     ReviewQuotaStatus,
@@ -39,6 +41,8 @@ class SqliteReviewHistoryRepository:
         self._profiles = profiles
         self._quota_bytes = quota_bytes
         self._warning_bytes = int(quota_bytes * warning_ratio)
+        self._initialization_lock = RLock()
+        self._initialized_paths: set[Path] = set()
         self._paths.review_history_dir.mkdir(parents=True, exist_ok=True)
 
     def save_quiz_attempt(
@@ -56,6 +60,22 @@ class SqliteReviewHistoryRepository:
             kind=ReviewHistoryKind.QUIZ_ATTEMPT,
             created_at=attempt.attempted_at.isoformat(),
             payload_json=payload_json,
+        )
+
+    def save_code_review(
+        self,
+        profile_id: str,
+        problem_id: str,
+        entry: CodeReviewEntry,
+    ) -> ReviewQuotaStatus:
+        """Persist review text while deliberately excluding the submitted source."""
+
+        return self._save(
+            profile_id,
+            problem_id,
+            kind=ReviewHistoryKind.CODE_REVIEW,
+            created_at=entry.reviewed_at.isoformat(),
+            payload_json=entry.model_dump_json(),
         )
 
     def list_records(
@@ -164,9 +184,12 @@ class SqliteReviewHistoryRepository:
         connection = sqlite3.connect(path, timeout=5)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 5000")
-        connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = FULL")
-        self._initialize(connection)
+        with self._initialization_lock:
+            if path not in self._initialized_paths:
+                connection.execute("PRAGMA journal_mode = WAL")
+                self._initialize(connection)
+                self._initialized_paths.add(path)
         return connection
 
     def _database_path(self, profile_id: str) -> Path:

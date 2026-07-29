@@ -6,6 +6,8 @@ import pytest
 from google.genai.errors import ClientError, ServerError
 
 from algohint.domain.enums import (
+    CodeReviewCategory,
+    CompletionReason,
     GemmaBackend,
     GemmaDeployment,
     HintCategory,
@@ -15,7 +17,8 @@ from algohint.domain.enums import (
     ProviderFailureReason,
 )
 from algohint.domain.errors import HintProviderError
-from algohint.domain.models import Hint, HintGenerationRequest
+from algohint.domain.models import CodeReviewRequest, Hint, HintGenerationRequest
+from algohint.infrastructure.code_review_prompt import build_code_review_prompt
 from algohint.infrastructure.gemma_hint_provider import GemmaHintProvider
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 from algohint.infrastructure.hint_prompt import build_hint_prompt
@@ -155,6 +158,48 @@ def response_json(text: str = "最小ケースで変数の変化を追いまし�
     return json.dumps({"text": text, "category": "understanding"}, ensure_ascii=False)
 
 
+def review_response_json() -> str:
+    return json.dumps(
+        {
+            "algorithm_recap": "入力を読み、必要な演算だけを行います。",
+            "strengths": ["処理が簡潔です。"],
+            "improvements": [
+                {
+                    "category": CodeReviewCategory.READABILITY.value,
+                    "title": "命名",
+                    "feedback": "役割が伝わる名前を維持しましょう。",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+def make_review_request() -> CodeReviewRequest:
+    return CodeReviewRequest(
+        learner_key="a" * 64,
+        problem_id="problem",
+        title="二つの値",
+        statement="二つの整数を処理する。",
+        constraints="0以上",
+        learning_goal="入力を確認する",
+        tags=("input",),
+        released_explanation="二値を加算します。",
+        source_code="print(0)",
+        completion_reason=CompletionReason.FULL_AC,
+    )
+
+
+def test_code_review_prompt_contains_only_released_learning_context() -> None:
+    prompt = build_code_review_prompt(make_review_request())
+
+    assert '"released_explanation"' in prompt
+    assert '"source_code"' in prompt
+    assert "hidden_tests" not in prompt
+    assert "model_solution" not in prompt
+    assert "correct_option_id" not in prompt
+
+
 def test_openai_provider_uses_responses_without_tools_or_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,6 +217,23 @@ def test_openai_provider_uses_responses_without_tools_or_storage(
     assert "tools" not in responses.kwargs
 
 
+def test_openai_provider_uses_distinct_review_schema_without_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only-placeholder")
+    responses = FakeOpenAIResponses(review_response_json())
+    provider = OpenAIHintProvider(
+        "gpt-5.6-sol",
+        client_factory=lambda: SimpleNamespace(responses=responses),
+    )
+
+    review = provider.generate_review(make_review_request())
+
+    assert review.improvements[0].category is CodeReviewCategory.READABILITY
+    assert responses.kwargs["store"] is False
+    assert responses.kwargs["text"]["format"]["name"] == "algohint_code_review"
+
+
 def test_gemma_provider_uses_configured_openai_compatible_endpoint() -> None:
     completions = FakeGemmaCompletions(response_json())
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -187,6 +249,23 @@ def test_gemma_provider_uses_configured_openai_compatible_endpoint() -> None:
     assert not provider.availability().sends_data_off_device
     assert hint.provider == "gemma"
     assert completions.kwargs["model"] == "google/gemma-4-12B-it"
+
+
+def test_gemma_provider_uses_review_contract() -> None:
+    completions = FakeGemmaCompletions(review_response_json())
+    provider = GemmaHintProvider(
+        "google/gemma-4-12B-it",
+        "http://127.0.0.1:8000/v1",
+        client_factory=lambda: SimpleNamespace(
+            chat=SimpleNamespace(completions=completions)
+        ),
+    )
+
+    review = provider.generate_review(make_review_request())
+
+    assert review.provider == "gemma"
+    response_format = completions.kwargs["response_format"]
+    assert response_format["json_schema"]["name"] == "algohint_code_review"
 
 
 def test_remote_gemma_endpoint_requires_off_device_consent() -> None:
@@ -248,6 +327,23 @@ def test_gemini_provider_requests_json_schema(
     config = models.kwargs["config"]
     assert isinstance(config, dict)
     assert config["response_mime_type"] == "application/json"
+
+
+def test_gemini_provider_requests_review_json_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-only-placeholder")
+    models = FakeGeminiModels(review_response_json())
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(models=models),
+    )
+
+    review = provider.generate_review(make_review_request())
+
+    assert review.provider == "gemini"
+    config = models.kwargs["config"]
+    assert config["response_json_schema"]["title"] == "ProviderCodeReviewPayload"
 
 
 def test_gemini_provider_pins_developer_api_authentication(

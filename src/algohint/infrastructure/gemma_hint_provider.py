@@ -15,10 +15,17 @@ from algohint.domain.enums import (
 )
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
+    CodeReviewRequest,
+    GeneratedCodeReview,
     GeneratedHint,
     HintGenerationRequest,
     ProviderAvailability,
     ProviderDiagnostic,
+)
+from algohint.infrastructure.code_review_prompt import (
+    CODE_REVIEW_INSTRUCTIONS,
+    ProviderCodeReviewPayload,
+    build_code_review_prompt,
 )
 from algohint.infrastructure.gemma_endpoint import gemma_endpoint_availability
 from algohint.infrastructure.hint_prompt import (
@@ -137,6 +144,55 @@ class GemmaHintProvider:
                 "type": "json_schema",
                 "json_schema": {
                     "name": "algohint_response",
+                    "schema": schema,
+                    "strict": True,
+                },
+            },
+        }
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+        """Request a completion review through the configured structured dialect."""
+
+        try:
+            with self._managed_client() as client:
+                response = client.chat.completions.create(
+                    **self._review_completion_arguments(request)
+                )
+                content = response.choices[0].message.content
+            if not isinstance(content, str):
+                raise ValueError("missing response content")
+            payload = ProviderCodeReviewPayload.model_validate_json(content)
+        except Exception as error:
+            raise self._classified_error(error) from error
+        return payload.to_generated(provider="gemma", model_name=self._model)
+
+    def _review_completion_arguments(
+        self,
+        request: CodeReviewRequest,
+    ) -> dict[str, Any]:
+        """Keep review schema differences at the same transport boundary as hints."""
+
+        base: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": CODE_REVIEW_INSTRUCTIONS},
+                {"role": "user", "content": build_code_review_prompt(request)},
+            ],
+        }
+        schema = ProviderCodeReviewPayload.model_json_schema()
+        if self._backend is GemmaBackend.LLAMA_CPP:
+            return {
+                **base,
+                "max_tokens": 1_200,
+                "response_format": {"type": "json_schema", "schema": schema},
+            }
+        return {
+            **base,
+            "max_completion_tokens": 1_200,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "algohint_code_review",
                     "schema": schema,
                     "strict": True,
                 },

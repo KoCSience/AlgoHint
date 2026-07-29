@@ -19,6 +19,8 @@ from algohint_gemma_server.contracts import (
     HintResponse,
     ModelInfo,
     ModelsResponse,
+    ReviewRequest,
+    ReviewResponse,
 )
 from algohint_gemma_server.model_runtime import (
     HintRuntime,
@@ -126,6 +128,7 @@ def create_app(
                     runtime.generate,
                     hint_request.system_instructions,
                     hint_request.learner_context,
+                    max_output_chars=1_200,
                 )
         except InputTooLongError as error:
             raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE) from error
@@ -150,5 +153,55 @@ def create_app(
             int((time.monotonic() - started) * 1_000),
         )
         return HintResponse(model=resolved_config.model_id, text=text)
+
+    @app.post("/v1/reviews", response_model=ReviewResponse)
+    async def reviews(
+        review_request: ReviewRequest,
+        authorization: str | None = Header(default=None),
+    ) -> ReviewResponse:
+        """Generate bounded review JSON without accepting arbitrary options."""
+
+        authorize(authorization)
+        if review_request.model != resolved_config.model_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        runtime: HintRuntime = app.state.runtime
+        if not runtime.ready:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        generation_lock: asyncio.Lock = app.state.generation_lock
+        if generation_lock.locked():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+        request_id = uuid.uuid4().hex
+        started = time.monotonic()
+        try:
+            async with generation_lock:
+                text = await asyncio.to_thread(
+                    runtime.generate,
+                    review_request.system_instructions,
+                    review_request.learner_context,
+                    max_output_chars=4_000,
+                )
+        except InputTooLongError as error:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE) from error
+        except InvalidModelOutputError as error:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY) from error
+        except ModelNotReadyError as error:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE) from error
+        except (RuntimeError, MemoryError) as error:
+            LOGGER.error(
+                "gemma_review_failed provider=gemma backend=transformers "
+                "model=%s request_id=%s exception_type=%s",
+                resolved_config.model_id,
+                request_id,
+                error.__class__.__name__,
+            )
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE) from error
+        LOGGER.info(
+            "gemma_review_complete provider=gemma backend=transformers "
+            "model=%s request_id=%s elapsed_ms=%d",
+            resolved_config.model_id,
+            request_id,
+            int((time.monotonic() - started) * 1_000),
+        )
+        return ReviewResponse(model=resolved_config.model_id, text=text)
 
     return app

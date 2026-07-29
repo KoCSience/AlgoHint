@@ -2,7 +2,7 @@
 
 from algohint.application.config import AppConfig
 from algohint.domain.enums import GemmaBackend, HintProviderId
-from algohint.domain.ports import HintProvider
+from algohint.domain.ports import LearningProvider
 from algohint.infrastructure.gemma_hint_provider import GemmaHintProvider
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 from algohint.infrastructure.openai_hint_provider import OpenAIHintProvider
@@ -11,7 +11,7 @@ from algohint.infrastructure.transformers_http_hint_provider import (
 )
 
 
-def build_gemma_provider(config: AppConfig) -> HintProvider:
+def build_gemma_provider(config: AppConfig) -> LearningProvider:
     """Select an explicit Gemma wire contract instead of guessing server behavior."""
 
     if config.gemma_backend is GemmaBackend.TRANSFORMERS_HTTP:
@@ -31,7 +31,7 @@ def build_gemma_provider(config: AppConfig) -> HintProvider:
     )
 
 
-def build_hint_providers(config: AppConfig) -> dict[HintProviderId, HintProvider]:
+def build_hint_providers(config: AppConfig) -> dict[HintProviderId, LearningProvider]:
     """Create lazy adapters without reading keys or opening network connections."""
 
     return {

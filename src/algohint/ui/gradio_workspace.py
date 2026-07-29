@@ -9,12 +9,15 @@ import gradio as gr
 
 from algohint.application.dto import LearnerDiagnostic
 from algohint.application.completion_review_service import (
+    CodeReviewUnavailableError,
     CompletionRequiredError,
+    ReviewConsentRequiredError,
 )
 from algohint.application.tutor_service import CloudConsentRequiredError
 from algohint.domain.enums import (
     HintProviderId,
     HintTrigger,
+    JudgeStatus,
     ProviderFailureReason,
     SubmissionMode,
     TutorRole,
@@ -22,6 +25,8 @@ from algohint.domain.enums import (
 from algohint.domain.models import ProviderAvailability, TutorSession
 from algohint.ui.formatters import (
     format_problem,
+    format_code_review,
+    format_code_review_history,
     format_quiz_history,
     format_quiz_result,
     format_report,
@@ -194,6 +199,16 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         and initial_problem_id is not None
         else None
     )
+    initial_code_review_history = (
+        services.reviews.code_review_history(
+            default_profile.profile_id,
+            initial_problem_id,
+        )
+        if initial_review is not None
+        and default_profile is not None
+        and initial_problem_id is not None
+        else None
+    )
     default_provider = (
         default_profile.preferences.hint_provider
         if default_profile is not None
@@ -256,6 +271,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 elem_id="problem-selector",
             )
             latest_diagnostic = gr.State(value=None)
+            code_review_trigger = gr.State(value=False)
             with gr.Row(equal_height=False):
                 with gr.Column(scale=6, min_width=360):
                     problem_header = gr.Markdown(initial_problem_header)
@@ -296,7 +312,8 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     cloud_consent = gr.Checkbox(
                         label=(
                             "公開問題、現在コード、質問、安全化した診断、会話履歴を"
-                            "選択中のクラウドモデルへ送信することに同意します"
+                            "選択中のクラウドモデルへ送信すること、および完了後レビュー文を"
+                            "ローカル履歴へ保存することに同意します"
                         ),
                         value=False,
                         elem_id="cloud-consent",
@@ -404,6 +421,54 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                                 > initial_quiz_history.page_size
                             ),
                             elem_id="next-review-history",
+                        )
+
+                    gr.Markdown("## AIによるコード改善レビュー")
+                    code_review_status = gr.Markdown(
+                        (
+                            "完了済みです。現在コードをレビューするには再試行できます。"
+                            if initial_review is not None
+                            else "全テストACまたはギブアップ後に利用できます。"
+                        ),
+                        elem_id="code-review-status",
+                    )
+                    current_code_review = gr.Markdown(
+                        (
+                            format_code_review(initial_code_review_history.entries[0])
+                            if initial_code_review_history is not None
+                            and initial_code_review_history.entries
+                            else ""
+                        ),
+                        elem_id="current-code-review",
+                    )
+                    retry_code_review = gr.Button(
+                        "現在コードをAIレビュー",
+                        visible=initial_review is not None,
+                        elem_id="retry-code-review",
+                    )
+                    code_review_history = gr.Markdown(
+                        (
+                            format_code_review_history(initial_code_review_history)
+                            if initial_code_review_history is not None
+                            else ""
+                        ),
+                        elem_id="code-review-history",
+                    )
+                    code_review_history_page = gr.State(value=0)
+                    with gr.Row():
+                        previous_code_review_history = gr.Button(
+                            "新しいレビューへ",
+                            visible=False,
+                            elem_id="previous-code-review-history",
+                        )
+                        next_code_review_history = gr.Button(
+                            "古いレビューへ",
+                            visible=(
+                                initial_code_review_history is not None
+                                and initial_code_review_history.total_count
+                                > initial_code_review_history.page_size
+                            ),
+                            elem_id="next-code-review-history",
                         )
 
         with gr.Tab("学習レポート"):
@@ -563,6 +628,29 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return "提出するPythonコードを入力してください。", None
             result = services.submissions.submit(profile_id, problem_id, source, mode)
             return format_submission(result), result.diagnostic
+
+        def submit_full(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+        ):
+            """Return an explicit review trigger only for this accepted FULL source."""
+
+            if not profile_id or not problem_id:
+                return "プロフィールと問題を選択してください。", None, False
+            if not source.strip():
+                return "提出するPythonコードを入力してください。", None, False
+            result = services.submissions.submit(
+                profile_id,
+                problem_id,
+                source,
+                SubmissionMode.FULL,
+            )
+            return (
+                format_submission(result),
+                result.diagnostic,
+                result.status is JudgeStatus.AC,
+            )
 
         def request_tutor_hint(
             profile_id: str | None,
@@ -725,6 +813,21 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             explanation = services.explanations.get_explanation(profile_id, problem_id)
             return explanation or "解説はACまたはギブアップ後に表示できます。"
 
+        def give_up_and_explain(
+            profile_id: str | None,
+            problem_id: str | None,
+        ):
+            """Trigger one automatic review only on the first give-up transition."""
+
+            if not profile_id or not problem_id:
+                return "プロフィールと問題を選択してください。", False
+            newly_completed = services.explanations.give_up(profile_id, problem_id)
+            explanation = services.explanations.get_explanation(profile_id, problem_id)
+            return (
+                explanation or "解説を読み込めませんでした。",
+                newly_completed,
+            )
+
         def show_report(profile_id: str | None):
             if not profile_id:
                 return "プロフィールを選択してください。"
@@ -858,6 +961,206 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 gr.Button(visible=page.total_count > page.page_size),
             )
 
+        def load_code_review_state(
+            profile_id: str | None,
+            problem_id: str | None,
+        ):
+            view = (
+                services.reviews.view(profile_id, problem_id)
+                if profile_id and problem_id
+                else None
+            )
+            if view is None or not profile_id or not problem_id:
+                return (
+                    "",
+                    "全テストACまたはギブアップ後に利用できます。",
+                    gr.Button(visible=False),
+                    "",
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+            history = services.reviews.code_review_history(profile_id, problem_id)
+            latest = (
+                format_code_review(history.entries[0]) if history.entries else ""
+            )
+            return (
+                latest,
+                "完了済みです。現在コードをレビューするには再試行できます。",
+                gr.Button(visible=True),
+                format_code_review_history(history),
+                0,
+                gr.Button(visible=False),
+                gr.Button(visible=history.total_count > history.page_size),
+            )
+
+        def browse_code_review_history(
+            profile_id: str | None,
+            problem_id: str | None,
+            current_page: int,
+            delta: int,
+        ):
+            """Move through bounded review pages without changing the current review."""
+
+            if not profile_id or not problem_id:
+                return "", 0, gr.Button(visible=False), gr.Button(visible=False)
+            requested_page = max(0, current_page + delta)
+            page = services.reviews.code_review_history(
+                profile_id,
+                problem_id,
+                page=requested_page,
+            )
+            max_page = max(0, (page.total_count - 1) // page.page_size)
+            if requested_page > max_page:
+                page = services.reviews.code_review_history(
+                    profile_id,
+                    problem_id,
+                    page=max_page,
+                )
+            has_newer = page.page > 0
+            has_older = (page.page + 1) * page.page_size < page.total_count
+            return (
+                format_code_review_history(page),
+                page.page,
+                gr.Button(visible=has_newer),
+                gr.Button(visible=has_older),
+            )
+
+        def generate_code_review_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+            consent: bool,
+            should_generate: bool,
+        ) -> Iterator[tuple[Any, str, Any, Any, bool, int, Any, Any]]:
+            """Stream measured elapsed time while the completion review runs."""
+
+            if not should_generate:
+                yield (
+                    gr.skip(),
+                    gr.skip(),
+                    gr.skip(),
+                    gr.skip(),
+                    False,
+                    gr.skip(),
+                    gr.skip(),
+                    gr.skip(),
+                )
+                return
+            if not profile_id or not problem_id:
+                yield (
+                    "",
+                    "プロフィールと問題を選択してください。",
+                    "",
+                    "",
+                    False,
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+                return
+            started = time.monotonic()
+            yield (
+                gr.skip(),
+                "コードレビューを生成中…（経過時間: 0 s）",
+                gr.skip(),
+                gr.skip(),
+                False,
+                gr.skip(),
+                gr.skip(),
+                gr.skip(),
+            )
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                services.reviews.generate_code_review,
+                profile_id,
+                problem_id,
+                source,
+                cloud_consent=consent,
+            )
+            try:
+                elapsed_seconds = 0
+                while not future.done():
+                    time.sleep(1)
+                    current_elapsed = int(time.monotonic() - started)
+                    if current_elapsed > elapsed_seconds and not future.done():
+                        elapsed_seconds = current_elapsed
+                        yield (
+                            gr.skip(),
+                            (
+                                "コードレビューを生成中…"
+                                f"（経過時間: {elapsed_seconds} s）"
+                            ),
+                            gr.skip(),
+                            gr.skip(),
+                            False,
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                        )
+                receipt = future.result()
+            except (
+                CodeReviewUnavailableError,
+                CompletionRequiredError,
+                ReviewConsentRequiredError,
+                ValueError,
+            ) as error:
+                try:
+                    history = services.reviews.code_review_history(
+                        profile_id,
+                        problem_id,
+                    )
+                except CompletionRequiredError:
+                    history = None
+                yield (
+                    (
+                        format_code_review(history.entries[0])
+                        if history is not None and history.entries
+                        else ""
+                    ),
+                    f"{error} 設定またはコードを確認して再試行できます。",
+                    format_code_review_history(history) if history is not None else "",
+                    format_review_quota(history) if history is not None else gr.skip(),
+                    False,
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(
+                        visible=(
+                            history is not None
+                            and history.total_count > history.page_size
+                        )
+                    ),
+                )
+                return
+            finally:
+                executor.shutdown(wait=True)
+            history = services.reviews.code_review_history(profile_id, problem_id)
+            elapsed = time.monotonic() - started
+            yield (
+                format_code_review(receipt.entry),
+                f"コードレビューを表示しました。（所要時間: {elapsed:.1f} s）",
+                format_code_review_history(history),
+                format_review_quota(history),
+                False,
+                0,
+                gr.Button(visible=False),
+                gr.Button(visible=history.total_count > history.page_size),
+            )
+
+        def retry_code_review_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+            consent: bool,
+        ) -> Iterator[tuple[Any, str, Any, Any, bool, int, Any, Any]]:
+            yield from generate_code_review_ui(
+                profile_id,
+                problem_id,
+                source,
+                consent,
+                True,
+            )
+
         problem_selection_event = problem_selector.change(
             selected_problem,
             inputs=[profile_selector, problem_selector],
@@ -892,6 +1195,20 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 quiz_history_page,
                 previous_quiz_history,
                 next_quiz_history,
+            ],
+            api_visibility="private",
+        )
+        problem_selection_event.then(
+            load_code_review_state,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                retry_code_review,
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
             ],
             api_visibility="private",
         )
@@ -955,6 +1272,20 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
+        profile_selection_event.then(
+            load_code_review_state,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                retry_code_review,
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+        )
         provider_selector.change(
             selected_provider,
             inputs=[profile_selector, provider_selector],
@@ -970,9 +1301,9 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             api_name="run_samples",
         )
         full_submission_event = full_submit.click(
-            lambda profile, problem, source: submit(profile, problem, source, SubmissionMode.FULL),
+            submit_full,
             inputs=[profile_selector, problem_selector, code],
-            outputs=[submission_result, latest_diagnostic],
+            outputs=[submission_result, latest_diagnostic, code_review_trigger],
             api_name="submit_solution",
         )
         full_submission_event.then(
@@ -998,6 +1329,44 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 next_quiz_history,
             ],
             api_visibility="private",
+        )
+        full_submission_event.then(
+            load_code_review_state,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                retry_code_review,
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+        )
+        full_submission_event.then(
+            generate_code_review_ui,
+            inputs=[
+                profile_selector,
+                problem_selector,
+                code,
+                cloud_consent,
+                code_review_trigger,
+            ],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                code_review_history,
+                review_quota,
+                code_review_trigger,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+            show_progress="hidden",
+            concurrency_limit=1,
+            concurrency_id="review-generation",
         )
         tutor_inputs = [
             profile_selector,
@@ -1050,9 +1419,9 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             api_name="show_explanation",
         )
         give_up_event = give_up.click(
-            lambda profile, problem: show_explanation(profile, problem, True),
+            give_up_and_explain,
             inputs=[profile_selector, problem_selector],
-            outputs=explanation_result,
+            outputs=[explanation_result, code_review_trigger],
             api_name="give_up",
         )
         give_up_event.then(
@@ -1078,6 +1447,44 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 next_quiz_history,
             ],
             api_visibility="private",
+        )
+        give_up_event.then(
+            load_code_review_state,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                retry_code_review,
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+        )
+        give_up_event.then(
+            generate_code_review_ui,
+            inputs=[
+                profile_selector,
+                problem_selector,
+                code,
+                cloud_consent,
+                code_review_trigger,
+            ],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                code_review_history,
+                review_quota,
+                code_review_trigger,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+            show_progress="hidden",
+            concurrency_limit=1,
+            concurrency_id="review-generation",
         )
         submit_quiz.click(
             grade_quiz,
@@ -1129,6 +1536,69 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 next_quiz_history,
             ],
             api_visibility="private",
+        )
+        previous_code_review_history.click(
+            lambda profile, problem, page: browse_code_review_history(
+                profile,
+                problem,
+                page,
+                -1,
+            ),
+            inputs=[
+                profile_selector,
+                problem_selector,
+                code_review_history_page,
+            ],
+            outputs=[
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+        )
+        next_code_review_history.click(
+            lambda profile, problem, page: browse_code_review_history(
+                profile,
+                problem,
+                page,
+                1,
+            ),
+            inputs=[
+                profile_selector,
+                problem_selector,
+                code_review_history_page,
+            ],
+            outputs=[
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_visibility="private",
+        )
+        retry_code_review.click(
+            retry_code_review_ui,
+            inputs=[
+                profile_selector,
+                problem_selector,
+                code,
+                cloud_consent,
+            ],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                code_review_history,
+                review_quota,
+                code_review_trigger,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_name="retry_code_review",
+            show_progress="hidden",
+            concurrency_limit=1,
+            concurrency_id="review-generation",
         )
         refresh_report.click(
             show_report,

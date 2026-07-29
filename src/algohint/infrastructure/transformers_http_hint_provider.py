@@ -14,10 +14,17 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from algohint.domain.enums import GemmaDeployment, ProviderFailureReason
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
+    CodeReviewRequest,
+    GeneratedCodeReview,
     GeneratedHint,
     HintGenerationRequest,
     ProviderAvailability,
     ProviderDiagnostic,
+)
+from algohint.infrastructure.code_review_prompt import (
+    CODE_REVIEW_INSTRUCTIONS,
+    ProviderCodeReviewPayload,
+    build_code_review_prompt,
 )
 from algohint.infrastructure.gemma_endpoint import gemma_endpoint_availability
 from algohint.infrastructure.hint_prompt import SYSTEM_INSTRUCTIONS, build_hint_prompt
@@ -33,6 +40,11 @@ class _ResponseModel(BaseModel):
 class _HintResponse(_ResponseModel):
     model: str
     text: str = Field(min_length=1, max_length=1_200)
+
+
+class _ReviewResponse(_ResponseModel):
+    model: str
+    text: str = Field(min_length=1, max_length=4_000)
 
 
 class _ModelInfo(_ResponseModel):
@@ -154,6 +166,34 @@ class TransformersHttpHintProvider:
             provider="gemma",
             model_name=payload.model,
         )
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+        """Use the dedicated authenticated review endpoint and validate its JSON."""
+
+        try:
+            with self._managed_client() as client:
+                response = client.post(
+                    f"{self._base_url}/reviews",
+                    headers=self._headers(),
+                    json={
+                        "model": self._model,
+                        "system_instructions": CODE_REVIEW_INSTRUCTIONS,
+                        "learner_context": build_code_review_prompt(request),
+                    },
+                )
+                response.raise_for_status()
+                response_payload = _ReviewResponse.model_validate(response.json())
+            if response_payload.model != self._model:
+                raise ValueError("response model does not match configured model")
+            payload = ProviderCodeReviewPayload.model_validate_json(
+                response_payload.text
+            )
+        except HintProviderError:
+            raise
+        except Exception as error:
+            self._log_development_exception("reviews", error)
+            raise self._classified_error(error) from error
+        return payload.to_generated(provider="gemma", model_name=self._model)
 
     def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
         """Check auth, endpoint, model, and readiness without learner content."""

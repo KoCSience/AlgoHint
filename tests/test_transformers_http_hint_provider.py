@@ -7,13 +7,15 @@ import httpx
 import pytest
 
 from algohint.domain.enums import (
+    CodeReviewCategory,
+    CompletionReason,
     GemmaDeployment,
     HintCategory,
     HintTrigger,
     ProviderFailureReason,
 )
 from algohint.domain.errors import HintProviderError
-from algohint.domain.models import Hint, HintGenerationRequest
+from algohint.domain.models import CodeReviewRequest, Hint, HintGenerationRequest
 from algohint.infrastructure.transformers_http_hint_provider import (
     TransformersHttpHintProvider,
 )
@@ -39,6 +41,21 @@ def make_request() -> HintGenerationRequest:
         hint_count=0,
         trigger=HintTrigger.STUCK,
         source_code="print(0)",
+    )
+
+
+def make_review_request() -> CodeReviewRequest:
+    return CodeReviewRequest(
+        learner_key="b" * 64,
+        problem_id="problem",
+        title="二つの値",
+        statement="二つの整数を処理する。",
+        constraints="0以上",
+        learning_goal="入力を確認する",
+        tags=("input",),
+        released_explanation="二値を加算します。",
+        source_code="print(0)",
+        completion_reason=CompletionReason.FULL_AC,
     )
 
 
@@ -94,6 +111,40 @@ def test_generate_uses_minimal_contract_and_trusted_category(
     assert isinstance(body, dict)
     assert set(body) == {"model", "system_instructions", "learner_context"}
     assert "print(0)" in str(body["learner_context"])
+    assert all(client.is_closed for client in clients)
+
+
+def test_generate_review_uses_dedicated_endpoint_and_validates_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        text = json.dumps(
+            {
+                "algorithm_recap": "入力を読み、必要な処理を行います。",
+                "strengths": ["処理が簡潔です。"],
+                "improvements": [
+                    {
+                        "category": CodeReviewCategory.READABILITY.value,
+                        "title": "命名",
+                        "feedback": "役割が伝わる名前を維持しましょう。",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+        return httpx.Response(200, json={"model": MODEL, "text": text})
+
+    provider, clients = provider_with_handler(handler)
+
+    review = provider.generate_review(make_review_request())
+
+    assert paths == ["/v1/reviews"]
+    assert review.provider == "gemma"
+    assert review.improvements[0].category is CodeReviewCategory.READABILITY
     assert all(client.is_closed for client in clients)
 
 

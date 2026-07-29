@@ -5,10 +5,13 @@ content cannot silently reach the judge or learner UI.
 """
 
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from algohint.domain.enums import (
+    CodeReviewCategory,
+    CompletionReason,
     CompareMode,
     HintCategory,
     HintProviderId,
@@ -298,3 +301,47 @@ class ReviewHistoryRecord(FrozenModel):
     kind: ReviewHistoryKind
     created_at: datetime
     payload_json: str = Field(min_length=2)
+
+
+class CodeReviewRequest(FrozenModel):
+    """Public, bounded context for a completion-only source review."""
+
+    learner_key: str = Field(pattern=r"^[a-f0-9]{64}$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    title: str
+    statement: str
+    constraints: str
+    learning_goal: str
+    tags: tuple[str, ...]
+    released_explanation: str
+    source_code: str = Field(min_length=1, max_length=16_384)
+    completion_reason: CompletionReason
+
+
+class CodeReviewPoint(FrozenModel):
+    """One prioritized improvement without replacement source code."""
+
+    category: CodeReviewCategory
+    title: str = Field(min_length=1, max_length=120)
+    feedback: str = Field(min_length=1, max_length=500)
+
+
+class GeneratedCodeReview(FrozenModel):
+    """Structured provider output safe to persist after policy checks."""
+
+    algorithm_recap: str = Field(min_length=1, max_length=600)
+    strengths: tuple[
+        Annotated[str, Field(min_length=1, max_length=300)],
+        ...,
+    ] = Field(default=(), max_length=3)
+    improvements: tuple[CodeReviewPoint, ...] = Field(min_length=1, max_length=5)
+    provider: str
+    model_name: str
+
+
+class CodeReviewEntry(FrozenModel):
+    """Persisted review text; the submitted source itself remains absent."""
+
+    reviewed_at: datetime
+    completion_reason: CompletionReason
+    review: GeneratedCodeReview

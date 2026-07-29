@@ -7,9 +7,16 @@ from typing import Any
 from algohint.domain.enums import ProviderFailureReason
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
+    CodeReviewRequest,
+    GeneratedCodeReview,
     GeneratedHint,
     HintGenerationRequest,
     ProviderAvailability,
+)
+from algohint.infrastructure.code_review_prompt import (
+    CODE_REVIEW_INSTRUCTIONS,
+    ProviderCodeReviewPayload,
+    build_code_review_prompt,
 )
 from algohint.infrastructure.hint_prompt import (
     SYSTEM_INSTRUCTIONS,
@@ -89,3 +96,35 @@ class OpenAIHintProvider:
             provider="openai",
             model_name=self._model,
         )
+
+    def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview:
+        """Request a distinct completion-review schema without tools or storage."""
+
+        try:
+            response = self._client().responses.create(
+                model=self._model,
+                instructions=CODE_REVIEW_INSTRUCTIONS,
+                input=build_code_review_prompt(request),
+                reasoning={"effort": "low"},
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "algohint_code_review",
+                        "schema": ProviderCodeReviewPayload.model_json_schema(),
+                        "strict": True,
+                    },
+                    "verbosity": "low",
+                },
+                max_output_tokens=1_200,
+                safety_identifier=request.learner_key,
+                store=False,
+            )
+            payload = ProviderCodeReviewPayload.model_validate_json(response.output_text)
+        except Exception as error:
+            raise HintProviderError(
+                reason_code=ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
+                provider="openai",
+                model=self._model,
+                exception_type=error.__class__.__name__,
+            ) from error
+        return payload.to_generated(provider="openai", model_name=self._model)

@@ -27,7 +27,13 @@ class HintRuntime(Protocol):
 
     def load(self) -> None: ...
 
-    def generate(self, system_instructions: str, learner_context: str) -> str: ...
+    def generate(
+        self,
+        system_instructions: str,
+        learner_context: str,
+        *,
+        max_output_chars: int = 1_200,
+    ) -> str: ...
 
 
 class TransformersGemmaRuntime:
@@ -72,7 +78,13 @@ class TransformersGemmaRuntime:
         self._processor = processor
         self._model = model
 
-    def generate(self, system_instructions: str, learner_context: str) -> str:
+    def generate(
+        self,
+        system_instructions: str,
+        learner_context: str,
+        *,
+        max_output_chars: int = 1_200,
+    ) -> str:
         """Apply Gemma's chat template, suppress thinking, and return final plain text."""
 
         if not self.ready or self._torch is None:
@@ -115,7 +127,9 @@ class TransformersGemmaRuntime:
         text = self._final_text(processor, decoded, input_ids)
         if not text:
             raise InvalidModelOutputError("model returned no final text")
-        if len(text) > 1_200:
+        if not 1 <= max_output_chars <= 4_000:
+            raise ValueError("max_output_chars is outside the supported range")
+        if len(text) > max_output_chars:
             raise InvalidModelOutputError("model output exceeds the character limit")
         return text
 

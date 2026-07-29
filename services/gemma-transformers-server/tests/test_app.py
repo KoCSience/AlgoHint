@@ -29,7 +29,13 @@ class FakeRuntime:
     def load(self) -> None:
         self.loaded = True
 
-    def generate(self, system_instructions: str, learner_context: str) -> str:
+    def generate(
+        self,
+        system_instructions: str,
+        learner_context: str,
+        *,
+        max_output_chars: int = 1_200,
+    ) -> str:
         self.generate_calls += 1
         return self.text
 
@@ -88,6 +94,27 @@ def test_hint_endpoint_returns_server_owned_json_contract() -> None:
     assert runtime.generate_calls == 1
 
 
+def test_review_endpoint_uses_same_authenticated_bounded_runtime() -> None:
+    runtime = FakeRuntime(text='{"algorithm_recap":"review"}')
+    with client_for(runtime) as client:
+        response = client.post(
+            "/v1/reviews",
+            headers=AUTHORIZATION,
+            json={
+                "model": "google/gemma-4-12B-it",
+                "system_instructions": "trusted review system",
+                "learner_context": "untrusted source context",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "model": "google/gemma-4-12B-it",
+        "text": '{"algorithm_recap":"review"}',
+    }
+    assert runtime.generate_calls == 1
+
+
 def test_hint_endpoint_rejects_unknown_model_and_oversized_fields() -> None:
     runtime = FakeRuntime()
     with client_for(runtime) as client:
@@ -131,7 +158,13 @@ def test_parallel_generation_is_rejected_without_queueing() -> None:
     release = Event()
 
     class BlockingRuntime(FakeRuntime):
-        def generate(self, system_instructions: str, learner_context: str) -> str:
+        def generate(
+            self,
+            system_instructions: str,
+            learner_context: str,
+            *,
+            max_output_chars: int = 1_200,
+        ) -> str:
             entered.set()
             assert release.wait(timeout=5)
             return self.text
@@ -160,7 +193,13 @@ def test_parallel_generation_is_rejected_without_queueing() -> None:
 
 def test_invalid_runtime_output_is_a_safe_bad_gateway() -> None:
     class InvalidRuntime(FakeRuntime):
-        def generate(self, system_instructions: str, learner_context: str) -> str:
+        def generate(
+            self,
+            system_instructions: str,
+            learner_context: str,
+            *,
+            max_output_chars: int = 1_200,
+        ) -> str:
             raise InvalidModelOutputError("private generated output")
 
     with client_for(InvalidRuntime()) as client:

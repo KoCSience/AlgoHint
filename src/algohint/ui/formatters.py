@@ -3,13 +3,14 @@
 from html import escape
 
 from algohint.application.dto import (
+    CodeReviewHistoryPage,
     LearnerProblemView,
     LearningReport,
     QuizHistoryPage,
     QuizResult,
     SubmissionView,
 )
-from algohint.domain.models import Hint
+from algohint.domain.models import CodeReviewEntry, Hint
 
 
 def format_problem(problem: LearnerProblemView) -> tuple[str, str]:
@@ -137,7 +138,7 @@ def format_quiz_history(page: QuizHistoryPage) -> str:
     return "\n\n".join(sections)
 
 
-def format_review_quota(page: QuizHistoryPage) -> str:
+def format_review_quota(page: QuizHistoryPage | CodeReviewHistoryPage) -> str:
     """Expose logical usage and warnings without SQLite implementation details."""
 
     used_mib = page.quota.used_bytes / (1024 * 1024)
@@ -149,3 +150,46 @@ def format_review_quota(page: QuizHistoryPage) -> str:
     if page.quota.warning:
         message += "（80%を超えています。上限超過時は古い履歴から整理されます。）"
     return message
+
+
+def format_code_review(entry: CodeReviewEntry) -> str:
+    """Render structured provider text without allowing generated HTML."""
+
+    review = entry.review
+    sections = [
+        "## アルゴリズムの復習",
+        escape(review.algorithm_recap),
+    ]
+    if review.strengths:
+        sections.extend(
+            [
+                "## 良い点",
+                "\n".join(f"- {escape(strength)}" for strength in review.strengths),
+            ]
+        )
+    improvements = "\n\n".join(
+        (
+            f"### {index}. {escape(point.title)}"
+            f"（{escape(point.category.value)}）\n\n{escape(point.feedback)}"
+        )
+        for index, point in enumerate(review.improvements, start=1)
+    )
+    sections.extend(["## 優先して改善する点", improvements])
+    return "\n\n".join(sections)
+
+
+def format_code_review_history(page: CodeReviewHistoryPage) -> str:
+    """Render the current bounded page of persisted, source-free review text."""
+
+    if not page.entries:
+        return "まだ保存済みのAIコードレビューはありません。"
+    sections = [
+        f"## AIコードレビュー履歴（全{page.total_count}件）",
+    ]
+    for entry in page.entries:
+        timestamp = entry.reviewed_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        sections.append(
+            f"### {timestamp} — {escape(entry.review.provider)} / "
+            f"{escape(entry.review.model_name)}\n\n{format_code_review(entry)}"
+        )
+    return "\n\n".join(sections)

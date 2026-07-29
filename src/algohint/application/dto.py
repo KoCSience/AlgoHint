@@ -6,6 +6,7 @@ from typing import Literal
 
 from algohint.domain.enums import JudgeStatus
 from algohint.domain.models import (
+    CodeReviewEntry,
     GeneratedHint,
     QuizAttempt,
     ReviewQuotaStatus,
@@ -147,6 +148,25 @@ class QuizHistoryPage:
     """Newest-first persisted attempts plus pagination and quota state."""
 
     attempts: tuple[QuizAttempt, ...]
+    page: int
+    page_size: int
+    total_count: int
+    quota: ReviewQuotaStatus
+
+
+@dataclass(frozen=True)
+class CodeReviewReceipt:
+    """Newly generated review plus the quota result of persisting it."""
+
+    entry: CodeReviewEntry
+    quota: ReviewQuotaStatus
+
+
+@dataclass(frozen=True)
+class CodeReviewHistoryPage:
+    """Newest-first persisted source reviews."""
+
+    entries: tuple[CodeReviewEntry, ...]
     page: int
     page_size: int
     total_count: int
