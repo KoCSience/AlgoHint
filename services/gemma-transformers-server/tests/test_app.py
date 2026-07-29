@@ -36,7 +36,7 @@ class FakeRuntime:
 
 def config() -> ServerConfig:
     return ServerConfig(
-        model_id="google/gemma-4-12B-it",
+        model_id="google/gemma-4-12B",
         model_revision="test-revision",
         api_key=API_KEY,
     )
@@ -58,7 +58,7 @@ def test_health_and_authenticated_model_discovery() -> None:
     assert models.json() == {
         "data": [
             {
-                "id": "google/gemma-4-12B-it",
+                "id": "google/gemma-4-12B",
                 "revision": "test-revision",
                 "backend": "transformers",
                 "ready": True,
@@ -74,7 +74,7 @@ def test_hint_endpoint_returns_server_owned_json_contract() -> None:
             "/v1/hints",
             headers=AUTHORIZATION,
             json={
-                "model": "google/gemma-4-12B-it",
+                "model": "google/gemma-4-12B",
                 "system_instructions": "trusted system",
                 "learner_context": "untrusted learner context",
             },
@@ -82,7 +82,7 @@ def test_hint_endpoint_returns_server_owned_json_contract() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "model": "google/gemma-4-12B-it",
+        "model": "google/gemma-4-12B",
         "text": "次に境界条件を小さな入力で確認しましょう。",
     }
     assert runtime.generate_calls == 1
@@ -104,7 +104,7 @@ def test_hint_endpoint_rejects_unknown_model_and_oversized_fields() -> None:
             "/v1/hints",
             headers=AUTHORIZATION,
             json={
-                "model": "google/gemma-4-12B-it",
+                "model": "google/gemma-4-12B",
                 "system_instructions": "trusted",
                 "learner_context": "x" * 65_537,
             },
@@ -138,7 +138,7 @@ def test_parallel_generation_is_rejected_without_queueing() -> None:
 
     runtime = BlockingRuntime()
     payload = {
-        "model": "google/gemma-4-12B-it",
+        "model": "google/gemma-4-12B",
         "system_instructions": "trusted",
         "learner_context": "context",
     }
@@ -168,7 +168,7 @@ def test_invalid_runtime_output_is_a_safe_bad_gateway() -> None:
             "/v1/hints",
             headers=AUTHORIZATION,
             json={
-                "model": "google/gemma-4-12B-it",
+                "model": "google/gemma-4-12B",
                 "system_instructions": "trusted",
                 "learner_context": "private learner marker",
             },
@@ -183,17 +183,19 @@ def test_server_logs_never_include_request_or_key(
     caplog,
 ) -> None:
     private_prompt = "private-learner-prompt-marker"
-    with caplog.at_level(logging.INFO, logger="algohint_gemma_server.app"):
-        with client_for(FakeRuntime()) as client:
-            response = client.post(
-                "/v1/hints",
-                headers=AUTHORIZATION,
-                json={
-                    "model": "google/gemma-4-12B-it",
-                    "system_instructions": "trusted",
-                    "learner_context": private_prompt,
-                },
-            )
+    with (
+        caplog.at_level(logging.INFO, logger="algohint_gemma_server.app"),
+        client_for(FakeRuntime()) as client,
+    ):
+        response = client.post(
+            "/v1/hints",
+            headers=AUTHORIZATION,
+            json={
+                "model": "google/gemma-4-12B",
+                "system_instructions": "trusted",
+                "learner_context": private_prompt,
+            },
+        )
 
     assert response.status_code == 200
     assert "gemma_inference_complete" in caplog.text

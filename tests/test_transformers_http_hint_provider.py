@@ -19,7 +19,7 @@ from algohint.infrastructure.transformers_http_hint_provider import (
 )
 
 API_KEY = "private-test-key-that-is-long-enough"
-MODEL = "google/gemma-4-12B-it"
+MODEL = "google/gemma-4-12B"
 
 
 def make_request() -> HintGenerationRequest:
@@ -221,4 +221,3 @@ def test_missing_key_is_unavailable_even_with_tunnel_url(
     assert not availability.available
     assert availability.sends_data_off_device
     assert diagnostic.reason_code is ProviderFailureReason.NOT_CONFIGURED
-

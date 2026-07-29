@@ -176,7 +176,7 @@ def test_gemma_provider_uses_configured_openai_compatible_endpoint() -> None:
     completions = FakeGemmaCompletions(response_json())
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     provider = GemmaHintProvider(
-        "google/gemma-4-12B-it",
+        "google/gemma-4-12B",
         "http://127.0.0.1:8000/v1",
         client_factory=lambda: client,
     )
@@ -186,14 +186,14 @@ def test_gemma_provider_uses_configured_openai_compatible_endpoint() -> None:
     assert provider.availability().available
     assert not provider.availability().sends_data_off_device
     assert hint.provider == "gemma"
-    assert completions.kwargs["model"] == "google/gemma-4-12B-it"
+    assert completions.kwargs["model"] == "google/gemma-4-12B"
 
 
 def test_remote_gemma_endpoint_requires_off_device_consent() -> None:
     """A future remote vLLM host must not inherit the local-server trust level."""
 
     availability = GemmaHintProvider(
-        "google/gemma-4-12B-it", "https://gemma.example.test/v1"
+        "google/gemma-4-12B", "https://gemma.example.test/v1"
     ).availability()
 
     assert availability.available
@@ -202,7 +202,7 @@ def test_remote_gemma_endpoint_requires_off_device_consent() -> None:
 
 def test_tunneled_remote_gemma_requires_consent() -> None:
     availability = GemmaHintProvider(
-        "google/gemma-4-12B-it",
+        "google/gemma-4-12B",
         "http://127.0.0.1:18000/v1",
         deployment=GemmaDeployment.REMOTE,
     ).availability()
@@ -214,7 +214,7 @@ def test_tunneled_remote_gemma_requires_consent() -> None:
 def test_llama_cpp_uses_its_documented_schema_dialect() -> None:
     completions = FakeGemmaCompletions(response_json())
     provider = GemmaHintProvider(
-        "google/gemma-4-12B-it",
+        "google/gemma-4-12B",
         "http://127.0.0.1:8000/v1",
         backend=GemmaBackend.LLAMA_CPP,
         client_factory=lambda: SimpleNamespace(

@@ -28,7 +28,7 @@ class AppConfig:
     default_hint_provider: HintProviderId = HintProviderId.OPENAI
     openai_model: str = "gpt-5.6-sol"
     gemini_model: str = "gemini-3.6-flash"
-    gemma_model: str = "google/gemma-4-12B-it"
+    gemma_model: str = "google/gemma-4-12B"
     gemma_base_url: str = ""
     gemma_backend: GemmaBackend = GemmaBackend.VLLM
     gemma_deployment: GemmaDeployment = GemmaDeployment.AUTO
@@ -69,7 +69,7 @@ class AppConfig:
             default_hint_provider=provider,
             openai_model=os.environ.get("ALGOHINT_OPENAI_MODEL", "gpt-5.6-sol"),
             gemini_model=os.environ.get("ALGOHINT_GEMINI_MODEL", "gemini-3.6-flash"),
-            gemma_model=os.environ.get("ALGOHINT_GEMMA_MODEL", "google/gemma-4-12B-it"),
+            gemma_model=os.environ.get("ALGOHINT_GEMMA_MODEL", "google/gemma-4-12B"),
             gemma_base_url=os.environ.get("ALGOHINT_GEMMA_BASE_URL", ""),
             gemma_backend=gemma_backend,
             gemma_deployment=gemma_deployment,
