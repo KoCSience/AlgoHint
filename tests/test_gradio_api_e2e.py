@@ -1,0 +1,159 @@
+"""Exercise the complete tutoring flow through Gradio's public API client."""
+
+import socket
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from gradio_client import Client
+
+from algohint.domain.enums import HintTrigger, JudgeStatus
+from tests.e2e_support import (
+    PROFILE_ID,
+    PROBLEM_ID,
+    DeterministicGeminiProvider,
+    build_e2e_app,
+)
+
+pytestmark = [
+    pytest.mark.filterwarnings(
+        "ignore:.*future.no_silent_downcasting.*:pandas.errors.Pandas4Warning"
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:The copy keyword is deprecated.*:pandas.errors.Pandas4Warning"
+    ),
+]
+
+
+def _unused_local_port() -> int:
+    """Reserve an ephemeral loopback port long enough to avoid fixed-port conflicts."""
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _chat_text(message: dict[str, object]) -> str:
+    """Normalize Gradio's rich-text wire shape for content assertions."""
+
+    content = message["content"]
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+    return str(content)
+
+
+@pytest.fixture
+def api_harness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[Client, DeterministicGeminiProvider]]:
+    """Run an isolated queued Gradio server and always release its thread."""
+
+    monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "False")
+    app, provider = build_e2e_app(tmp_path / "api-e2e-data")
+    port = _unused_local_port()
+    _, local_url, _ = app.launch(
+        server_name="127.0.0.1",
+        server_port=port,
+        prevent_thread_lock=True,
+        show_error=True,
+        quiet=True,
+    )
+    try:
+        client = Client(local_url, verbose=False, analytics_enabled=False)
+        yield client, provider
+    finally:
+        app.close()
+
+
+def test_tutor_flow_through_named_gradio_apis(
+    api_harness: tuple[Client, DeterministicGeminiProvider],
+) -> None:
+    """Verify consent, every hint trigger, state handoff, and history clearing."""
+
+    gradio_client, provider = api_harness
+    selected = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        api_name="/select_problem",
+    )
+    assert "二つの数の合計" in selected[0]
+    assert selected[2] == []
+
+    provider_status, consent = gradio_client.predict(
+        PROFILE_ID,
+        "gemini",
+        api_name="/select_hint_provider",
+    )
+    assert "Gemini" in provider_status
+    assert consent is False
+
+    rejected = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "",
+        "",
+        False,
+        api_name="/request_stuck_hint",
+    )
+    assert rejected[0] == []
+    assert "同意" in rejected[1]
+    assert provider.requests == []
+
+    stuck = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "",
+        "",
+        True,
+        api_name="/request_stuck_hint",
+    )
+    assert len(stuck[0]) == 2
+    assert "gemini / gemini-e2e" in _chat_text(stuck[0][1])
+    assert stuck[1] == "ヒントを表示しました。"
+
+    asked = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "print(0)",
+        "どの変数を追えばよいですか？",
+        True,
+        api_name="/ask_tutor",
+    )
+    assert len(asked[0]) == 4
+    assert asked[2] == ""
+
+    execution = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "print(0)",
+        api_name="/run_samples",
+    )
+    assert "WA" in execution
+
+    result_hint = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "print(0)",
+        "",
+        True,
+        api_name="/request_result_hint",
+    )
+    assert len(result_hint[0]) == 6
+    assert "gemini / gemini-e2e" in _chat_text(result_hint[0][-1])
+    assert [request.trigger for request in provider.requests] == [
+        HintTrigger.STUCK,
+        HintTrigger.QUESTION,
+        HintTrigger.JUDGE_RESULT,
+    ]
+    assert provider.requests[-1].judge_status is JudgeStatus.WA
+
+    cleared = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        api_name="/clear_tutor_history",
+    )
+    assert cleared[0] == []
+    assert "クリア" in cleared[1]
