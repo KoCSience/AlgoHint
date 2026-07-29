@@ -24,6 +24,10 @@ uv lock --check
 Playwright E2Eを実行します。Chrome DevTools MCPを含む検出範囲、導入、実行順序、
 失敗成果物は[E2Eデバッグガイド](e2e-debugging.md)を参照してください。
 
+WSL 2でChrome MCPを利用する場合は、`node`だけでなく`npm`と`npx`もLinux版へ
+統一します。Windows PATHとの混在、mise Node 24、Chrome for Testing、Codex設定は
+[Chrome DevTools MCP導入ガイド](chrome-devtools-mcp.md#wsl-2のnode環境)を参照してください。
+
 リリース前はロック済みruntime依存を一時ファイルへ書き出して監査します。
 
 ```bash

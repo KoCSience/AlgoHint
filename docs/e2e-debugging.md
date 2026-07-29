@@ -19,6 +19,7 @@ AlgoHint Coachは、速さと検出範囲が異なる三層のE2Eでヒント機
 3. Playwright E2E
 4. `algohint doctor`
 5. Chrome DevTools MCPと実Geminiによる1回のヒント要求
+6. WSLホスト検証の完了後にDocker runtimeを再構築してスモーク確認
 
 前半三層は一時データディレクトリ、偽Gemini、一時ローカルポートを使います。
 実credentialsや外部通信を必要とせず、利用枠も消費しません。
@@ -166,6 +167,32 @@ Chrome DevTools MCPの導入と操作は
   Gradio API E2Eまでをコンテナ内で実行し、Playwrightをホスト側から接続します。
 - Docker runtimeイメージへテスト用ブラウザを追加しません。起動中の
   `127.0.0.1:7860`へホストのPlaywrightまたはChrome MCPから接続します。
+
+## WSLホストからDockerへの確認順序
+
+Dockerのビルド前に、WSLホストで通常テスト、Gradio API E2E、Playwright E2Eを
+成功させます。その後、現在のソースからruntimeを再構築します。
+
+```bash
+docker compose build app
+ALGOHINT_ENV=development docker compose up --detach --no-build
+docker compose ps
+```
+
+`healthy`になったら、WSL側のChrome MCPまたはPlaywrightから
+`http://127.0.0.1:7860`を開きます。開発プロフィール、問題選択、AC Judge、
+キー未設定時のRuleBasedヒント、console、4xx/5xxの有無を確認します。Docker内へ
+ブラウザ、Node、MCPを導入する必要はありません。
+
+検証後は学習データvolumeを残して停止します。
+
+```bash
+docker compose logs --tail 200 app
+docker compose down
+docker volume inspect algohint-runtime
+```
+
+`docker compose down --volumes`とvolume pruneは使用しません。
 
 ## トラブルシューティング
 

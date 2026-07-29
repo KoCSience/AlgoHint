@@ -7,48 +7,120 @@ console、ブラウザとGradio間のnetworkを対話的に調査するために
 
 ## 前提
 
-- Node.js LTSと`npm`／`npx`
+- WSL 2上のLinux版Node.js `24.18.0`と`npm`／`npx`
 - 現行ChromeまたはChrome for Testing
 - Codex CLI、IDE拡張、デスクトップアプリのいずれか
 - AlgoHintを`127.0.0.1`で起動できること
 
-このプロジェクトで検証対象とする`chrome-devtools-mcp`は`1.2.0`です。
+このプロジェクトで検証対象とする`chrome-devtools-mcp`は`1.6.0`です。
 バージョンを固定し、導入日によって動作が変わることを避けます。
+
+## WSL 2のNode環境
+
+`node --version`だけでは、`npm`と`npx`もLinux版であることを確認できません。Windowsの
+PATHがWSLへ引き継がれている環境では、Linuxの`/usr/bin/node`と
+`/mnt/c/Program Files/nodejs/npm`が混在する場合があります。CodexのLinux sandbox内では
+Windows executable用のWSL interopが遮断されるため、Windows版npmの起動スクリプトが
+誤って`WSL 1 is not supported`と表示することがあります。
+
+まず実際のWSLと実行ファイルを確認します。
+
+```bash
+uname -r
+command -v node
+command -v npm
+command -v npx
+type -a node npm npx
+```
+
+`uname -r`に`microsoft-standard-WSL2`があり、Windows側の`wsl --list --verbose`が
+VERSION 2ならWSL 2です。`npm`または`npx`の先頭候補が`/mnt/c/`の場合は、
+sandboxを無効化せずLinux版へ統一します。本プロジェクトの検証環境では既存の
+Linux版miseを使います。
+
+```bash
+mise use --global --pin node@24.18.0
+```
+
+対話shellとCodexのlogin shellの双方でmise shimsをWindows PATHより先にします。
+`~/.profile`と`~/.bashrc`へ、既存PATHとの重複を避けて次を追加します。
+
+```sh
+case ":$PATH:" in
+    *":$HOME/.local/share/mise/shims:"*) ;;
+    *) PATH="$HOME/.local/share/mise/shims:$PATH" ;;
+esac
+export PATH
+```
+
+新しいshellで次がすべて成功することを確認します。
+
+```bash
+node --version
+npm --version
+npx --version
+node -p 'process.platform'
+mise doctor
+```
+
+期待値はNode `v24.18.0`、platform `linux`、`shims_on_path: yes`です。Windows側の
+Node/npmは削除せず、WSLでの優先順位だけを変更します。
+
+Playwrightで導入したChrome for TestingはWSLのLinux実行ファイルです。次で実体を
+確認し、存在しない場合だけ再導入します。
+
+```bash
+find "$HOME/.cache/ms-playwright" \
+  -path '*/chrome-linux64/chrome' -type f -print
+# 上のfindで実行ファイルが見つからない場合だけ実行
+uv run playwright install chromium
+```
 
 ## 推奨するユーザー単位設定
 
-CLIから登録します。
+Linux版npxとWSL内Chromeの絶対パスを使ってCLIから登録します。次のパスは実環境で
+確認した値へ置き換えてください。
 
 ```bash
-codex mcp add chrome-devtools -- \
-  npx -y chrome-devtools-mcp@1.2.0 \
+codex mcp add chrome-devtools \
+  --env CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1 -- \
+  "$HOME/.local/share/mise/shims/npx" \
+  -y chrome-devtools-mcp@1.6.0 \
   --isolated \
   --headless \
   --no-usage-statistics \
-  --no-performance-crux
+  --no-performance-crux \
+  --redact-network-headers \
+  --executable-path="$HOME/.cache/ms-playwright/<revision>/chrome-linux64/chrome"
 ```
 
 または`~/.codex/config.toml`へ次を追加します。
 
 ```toml
 [mcp_servers.chrome-devtools]
-command = "npx"
+command = "/home/<user>/.local/share/mise/shims/npx"
 args = [
   "-y",
-  "chrome-devtools-mcp@1.2.0",
+  "chrome-devtools-mcp@1.6.0",
   "--isolated",
   "--headless",
   "--no-usage-statistics",
   "--no-performance-crux",
+  "--redact-network-headers",
+  "--executable-path=/home/<user>/.cache/ms-playwright/<revision>/chrome-linux64/chrome",
 ]
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 default_tools_approval_mode = "prompt"
 enabled = true
+
+[mcp_servers.chrome-devtools.env]
+CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"
 ```
 
 `--isolated`は通常利用のChromeプロファイルとCookieを分離し、`--headless`は画面のない
-環境でも起動できるようにします。usage statisticsとCrUX連携も無効化します。
+環境でも起動できるようにします。usage statistics、CrUX連携、更新確認を無効化し、
+ブラウザnetworkの認証系headerはMCP出力前に伏字化します。
 
 CodexのMCP設定は既定で`~/.codex/config.toml`に保存され、CLI、IDE、デスクトップ間で
 共有できます。プロジェクト設定も可能ですが、信頼済みプロジェクトだけで有効になる
@@ -110,7 +182,8 @@ Chrome DevTools MCPをそのリモートデバッグエンドポイントへ接�
 | Chrome executableがない | ChromeまたはChrome for Testingを導入し、MCPの対応オプションで場所を指定する |
 | 起動timeout | 初回npm取得、プロキシ、Chrome起動時間を確認し、必要時だけtimeoutを延ばす |
 | npm取得が拒否される | 組織プロキシ、npm registry、sandboxの外向き通信許可を確認する |
-| WSL 1で`npm`／`npx`が`WSL 1 is not supported`になる | WSL 2へ更新するか、Windows側のNode.jsとCodexからMCPを起動する |
+| WSL 2なのに`npm`／`npx`が`WSL 1 is not supported`になる | `command -v npm npx`を確認する。`/mnt/c/`ならWindows版の誤診断なのでmiseのLinux版を優先する |
+| 実際にWSL 1を使っている | Windows側の`wsl --list --verbose`で確認し、WSL 2へ変換してから再実行する |
 | WSLからWindows Chromeへ接続できない | WSL内Chromeを使うか、Windows側のローカル限定endpointと到達経路を確認する |
 | profile lock | 既存Chromeを終了するか、新しい隔離プロフィールを使う |
 | Gemini通信がnetworkにない | 正常。server-to-server通信なのでdoctorとサーバーログを確認する |
@@ -135,7 +208,7 @@ codex mcp remove chrome-devtools
 ## バージョン更新
 
 更新前に公式リリースノートとCLIオプション差分を確認し、設定中の
-`chrome-devtools-mcp@1.2.0`を意図した版へ変更します。Codex再起動後、接続確認、
+`chrome-devtools-mcp@1.6.0`を意図した版へ変更します。Codex再起動後、接続確認、
 ページ一覧、snapshot、screenshot、console、network、「わからない」1回の順に
 回帰確認します。通常Chromeプロファイルを使っていないことと、統計・CrUX無効化
 オプションが引き続き有効であることも再確認します。

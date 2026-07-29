@@ -6,6 +6,11 @@ Docker EngineとDocker Compose v2互換の`docker compose`サブコマンドを�
 
 この構成は、信頼できる個人が`127.0.0.1`から利用するためのものです。提出コードはアプリと同じコンテナ内で実行されるため、LANやインターネットへ公開しないでください。
 
+Dockerを先に切り分け環境として使うのではなく、まずWSLホストでpytest、Gradio API E2E、
+Playwright E2Eを成功させます。その後に同じソースをruntimeイメージへ組み込み、
+ホストのChrome MCPまたはPlaywrightからDocker版UIを確認します。ブラウザとMCPは
+WSLホスト側で動かし、runtimeイメージへNodeやChromeを追加しません。
+
 ## Docker Compose
 
 利用するキーをホーム側から起動シェルへ読み込んでからComposeを実行すると、
@@ -28,6 +33,33 @@ docker compose down
 ```
 
 `down`では名前付きボリュームを削除しないため、次回起動時もプロフィールと学習履歴を読み込めます。
+
+### WSLホスト検証後のruntime確認
+
+古いイメージを誤って検証しないよう、ビルドと起動を分けます。
+
+```bash
+docker compose build app
+ALGOHINT_ENV=development docker compose up --detach --no-build
+docker compose ps
+```
+
+`healthy`になったら次を確認します。
+
+- 公開先が`127.0.0.1:7860`だけである。
+- コンテナユーザーがUID 10001で、root filesystemがread-onlyである。
+- `/tmp`と`/opt/algohint/data/runtime`が書込み可能である。
+- 問題選択、公開サンプルのAC、キー未設定時のRuleBasedヒントが動く。
+- console error、HTTP 4xx/5xx、ログへの秘密情報露出がない。
+
+画面確認はWSL側ブラウザから<http://127.0.0.1:7860>へ接続します。終了後はvolumeを
+保持したまま停止し、保持を確認します。
+
+```bash
+docker compose logs --tail 200 app
+docker compose down
+docker volume inspect algohint-runtime
+```
 
 教師モードは通常モードを停止してから、同じ安全設定とボリュームを使って一時起動します。
 

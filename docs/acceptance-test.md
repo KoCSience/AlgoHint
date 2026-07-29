@@ -28,6 +28,11 @@
 
 ## ヒントE2E
 
+- [ ] `uname -r`とWindows側`wsl --list --verbose`でWSL 2を確認できる。
+- [ ] `node`、`npm`、`npx`の先頭候補がmiseのLinux shimsで、Node `v24.18.0`とplatform `linux`を返す。
+- [ ] 通常Codex sandbox内の`npm --version`と`npx --version`がWindows interopなしで成功する。
+- [ ] Chrome MCP `1.6.0`がWSL内Chrome for Testing、隔離、headless、統計・CrUX無効、header伏字で登録される。
+- [ ] Codex再起動後、`/mcp`でChrome MCPが接続済みになる。
 - [ ] 通常の`uv run pytest`はChromium未導入環境でも成功し、ブラウザE2Eだけをskipする。
 - [ ] Gradio API E2Eで問題・Gemini選択、未同意拒否、質問、「わからない」、実行結果ヒント、履歴消去が成功する。
 - [ ] Playwright E2Eで同じ操作を実クリックでき、RE診断が実行結果ヒントへ渡る。
@@ -46,6 +51,7 @@
 - [ ] 起動シェルに設定したLLM変数がComposeの受け口からコンテナへ渡り、Composeファイルとイメージには秘密値が含まれない。
 - [ ] コンテナがUID 10001の非rootユーザーで起動し、ヘルスチェックが`healthy`になる。
 - [ ] ルートファイルシステムへ書き込めず、`/tmp`と`data/runtime`へは書き込める。
+- [ ] WSL側ChromeからDocker版UIを操作し、AC Judge、RuleBasedヒント、console／HTTP正常を確認できる。
 - [ ] コンテナ内でもAC、WA、CE、RE、TLEの判定が成功する。
 - [ ] コンテナを削除・再作成しても、同じボリュームからプロフィールと学習履歴を復元できる。
 - [ ] 通常モード停止後、明示的な教師モード起動でのみ教師タブが表示される。
