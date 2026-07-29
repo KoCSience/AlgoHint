@@ -15,6 +15,7 @@ from algohint.domain.enums import (
     HintTrigger,
     JudgeStatus,
     ProviderFailureReason,
+    QuizTopic,
     TestVisibility,
     TutorRole,
 )
@@ -214,3 +215,43 @@ class LearningLog(FrozenModel):
 
     profile_id: str
     progress: dict[str, ProblemProgress] = Field(default_factory=dict)
+
+
+class QuizOption(FrozenModel):
+    """One stable answer choice used by authored completion material."""
+
+    option_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    text: str = Field(min_length=1, max_length=300)
+
+
+class QuizQuestion(FrozenModel):
+    """One authored question whose correct answer stays server-side until grading."""
+
+    question_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    topic: QuizTopic
+    prompt: str = Field(min_length=1, max_length=500)
+    options: tuple[QuizOption, ...] = Field(min_length=3, max_length=4)
+    correct_option_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    explanation: str = Field(min_length=1, max_length=800)
+
+    def model_post_init(self, __context: object) -> None:
+        option_ids = [option.option_id for option in self.options]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError(f"Duplicate option ID in {self.question_id}")
+        if self.correct_option_id not in option_ids:
+            raise ValueError(f"Unknown correct option in {self.question_id}")
+
+
+class ReviewMaterial(FrozenModel):
+    """Exactly five reviewed questions covering the required learning dimensions."""
+
+    version: int = Field(ge=1)
+    questions: tuple[QuizQuestion, ...] = Field(min_length=5, max_length=5)
+
+    def model_post_init(self, __context: object) -> None:
+        question_ids = [question.question_id for question in self.questions]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("Review material has duplicate question IDs")
+        topics = {question.topic for question in self.questions}
+        if topics != set(QuizTopic):
+            raise ValueError("Review material must contain every quiz topic exactly once")

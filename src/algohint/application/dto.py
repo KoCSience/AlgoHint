@@ -81,3 +81,54 @@ class ExerciseSelection:
     source: Literal["restored", "default", "explicit", "unavailable"]
     preference_repaired: bool = False
     persistence_warning: str | None = None
+
+
+@dataclass(frozen=True)
+class PublicQuizOption:
+    """Learner-visible option without correctness metadata."""
+
+    option_id: str
+    text: str
+
+
+@dataclass(frozen=True)
+class PublicQuizQuestion:
+    """Learner-visible question that cannot reveal its answer before grading."""
+
+    question_id: str
+    topic: str
+    prompt: str
+    options: tuple[PublicQuizOption, ...]
+
+
+@dataclass(frozen=True)
+class CompletionReviewView:
+    """Completion-gated explanation and authored quiz."""
+
+    explanation: str
+    material_version: int
+    questions: tuple[PublicQuizQuestion, ...]
+
+
+@dataclass(frozen=True)
+class QuizQuestionFeedback:
+    """Post-submit detail with the selected and correct answer."""
+
+    question_id: str
+    prompt: str
+    selected_option_id: str
+    selected_text: str
+    correct_option_id: str
+    correct_text: str
+    correct: bool
+    explanation: str
+
+
+@dataclass(frozen=True)
+class QuizResult:
+    """One deterministic grading result suitable for persistence in Phase 4."""
+
+    material_version: int
+    score: int
+    total: int
+    feedback: tuple[QuizQuestionFeedback, ...]

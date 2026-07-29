@@ -27,9 +27,16 @@ class SubmissionService:
         self._diagnostic_policy = diagnostic_policy or LearnerDiagnosticPolicy()
 
     @staticmethod
-    def _updated_log(log: LearningLog, problem_id: str, status: JudgeStatus) -> LearningLog:
+    def _updated_log(
+        log: LearningLog,
+        problem_id: str,
+        status: JudgeStatus,
+        mode: SubmissionMode,
+    ) -> LearningLog:
         current = log.progress.get(problem_id, ProblemProgress())
-        solved = current.solved or status is JudgeStatus.AC
+        solved = current.solved or (
+            mode is SubmissionMode.FULL and status is JudgeStatus.AC
+        )
         progress = current.model_copy(
             update={
                 "attempt_count": current.attempt_count + 1,
@@ -54,9 +61,13 @@ class SubmissionService:
         cases = self._problems.get_tests(problem_id, include_hidden=mode is SubmissionMode.FULL)
         result = self._judge.judge(source, cases, self._policy)
         log = self._logs.load_log(profile_id)
-        self._logs.save_log(self._updated_log(log, problem_id, result.status))
+        self._logs.save_log(self._updated_log(log, problem_id, result.status, mode))
         message = {
-            JudgeStatus.AC: "ACです。解説を開けます。",
+            JudgeStatus.AC: (
+                "ACです。解説を開けます。"
+                if mode is SubmissionMode.FULL
+                else "公開サンプルはACです。全テストで提出して完了を確認しましょう。"
+            ),
             JudgeStatus.WA: "WAです。出力と境界条件を見直してみましょう。",
             JudgeStatus.RE: "REです。入力処理や例外になり得る箇所を確認してみましょう。",
             JudgeStatus.TLE: "TLEです。制約に対する繰り返し回数を確認してみましょう。",

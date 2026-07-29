@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from algohint.application.problem_service import ProblemService
+from algohint.domain.enums import QuizTopic
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
 
@@ -14,6 +15,10 @@ def test_repository_loads_all_initial_problems() -> None:
     assert len(repository.list_problems()) == 5
     assert len(repository.get_tests("l3_frequency_count", include_hidden=False)) == 2
     assert len(repository.get_tests("l3_frequency_count", include_hidden=True)) == 5
+    for problem in repository.list_problems():
+        review = repository.get_review_material(problem.problem_id)
+        assert len(review.questions) == 5
+        assert {question.topic for question in review.questions} == set(QuizTopic)
 
 
 def test_learner_problem_view_excludes_private_assets() -> None:

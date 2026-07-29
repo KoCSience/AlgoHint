@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "question_id": "algorithm-ordered-conditions",
+      "topic": "algorithm",
+      "prompt": "三つの温度範囲を簡潔に分類する方法はどれですか？",
+      "options": [
+        {"option_id": "ascending-checks", "text": "小さい境界から順に条件分岐する"},
+        {"option_id": "loop-temperature", "text": "温度の絶対値だけループする"},
+        {"option_id": "sort-labels", "text": "分類名を辞書順に並べる"}
+      ],
+      "correct_option_id": "ascending-checks",
+      "explanation": "小さい側から分けると、前の条件を除外済みとして次の上限だけを確認できます。"
+    },
+    {
+      "question_id": "framing-partition",
+      "topic": "problem_framing",
+      "prompt": "条件範囲を整理するときの重要な確認はどれですか？",
+      "options": [
+        {"option_id": "no-gap-overlap", "text": "範囲に抜けや重なりがなく、全整数を覆う"},
+        {"option_id": "same-output", "text": "すべての範囲で同じ文字列を出す"},
+        {"option_id": "positive-only", "text": "負数は入力されないものとする"}
+      ],
+      "correct_option_id": "no-gap-overlap",
+      "explanation": "分類問題では、各入力がちょうど一つの分類へ入ることが重要です。"
+    },
+    {
+      "question_id": "complexity-constant",
+      "topic": "complexity",
+      "prompt": "この条件判定の時間計算量はどれですか？",
+      "options": [
+        {"option_id": "constant", "text": "O(1)"},
+        {"option_id": "linear", "text": "O(T)"},
+        {"option_id": "logarithmic", "text": "O(log T)"}
+      ],
+      "correct_option_id": "constant",
+      "explanation": "入力値に関係なく、評価する条件数は一定です。"
+    },
+    {
+      "question_id": "edge-boundaries",
+      "topic": "edge_cases",
+      "prompt": "境界条件をまとめて確認できる入力群はどれですか？",
+      "options": [
+        {"option_id": "all-boundaries", "text": "-1, 0, 30, 31"},
+        {"option_id": "middle-only", "text": "10, 20"},
+        {"option_id": "hot-only", "text": "50, 60"}
+      ],
+      "correct_option_id": "all-boundaries",
+      "explanation": "各境界の直前・境界値・直後を確認すると比較演算子の誤りを発見できます。"
+    },
+    {
+      "question_id": "implementation-branch-order",
+      "topic": "implementation",
+      "prompt": "0未満を先に判定した後、mildを判定する条件として十分なのはどれですか？",
+      "options": [
+        {"option_id": "at-most-thirty", "text": "T <= 30"},
+        {"option_id": "below-zero", "text": "T < 0"},
+        {"option_id": "above-thirty", "text": "T > 30"}
+      ],
+      "correct_option_id": "at-most-thirty",
+      "explanation": "最初の分岐を通過した時点でTは0以上なので、次は上限だけを確認できます。"
+    }
+  ]
+}

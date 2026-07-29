@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from algohint.application.explanation_service import ExplanationService
+from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
@@ -35,6 +36,7 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
         ApplicationServices(
             profiles=profile_service,
             selections=ExerciseSelectionService(profile_service, problem_service),
+            reviews=CompletionReviewService(problems, logs),
             problems=problem_service,
             submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
             tutor=TutorService(
@@ -63,6 +65,8 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "実行結果からヒント" in config_text
     assert "Ctrl+Enter" in config_text
     assert "algohintShortcutBound" in config_text
+    assert "完了後の復習小テスト" in config_text
+    assert "小テストを採点" in config_text
 
 
 def test_fallback_notice_is_actionable_without_raw_provider_data() -> None:

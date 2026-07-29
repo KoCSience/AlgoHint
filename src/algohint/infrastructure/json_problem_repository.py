@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from algohint.domain.enums import TestVisibility
-from algohint.domain.models import Problem, TestCase
+from algohint.domain.models import Problem, ReviewMaterial, TestCase
 from algohint.infrastructure.filesystem_paths import DataPaths
 
 
@@ -71,3 +71,11 @@ class JsonProblemRepository:
         if not isinstance(payload, list):
             raise ValueError("curriculum.json must be a list")
         return [dict(item) for item in payload if isinstance(item, dict)]
+
+    def get_review_material(self, problem_id: str) -> ReviewMaterial:
+        """Load answer-bearing review content only through the server repository."""
+
+        path = self._problem_dir(problem_id) / "review.json"
+        if not path.is_file():
+            raise KeyError(f"No review material: {problem_id}")
+        return ReviewMaterial.model_validate(self._read_json(path))

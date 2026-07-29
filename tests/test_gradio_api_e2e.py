@@ -131,6 +131,26 @@ def test_tutor_flow_through_named_gradio_apis(
     ]
     assert provider.requests[-1].judge_status is JudgeStatus.WA
 
+    completed = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "a, b = map(int, input().split())\nprint(a + b)",
+        api_name="/submit_solution",
+    )
+    assert "AC" in completed
+
+    quiz = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        "add-once",
+        "two-in-one-out",
+        "constant",
+        "negative-mix",
+        "convert-int",
+        api_name="/grade_review_quiz",
+    )
+    assert "5/5" in quiz
+
     cleared = gradio_client.predict(
         PROFILE_ID,
         PROBLEM_ID,

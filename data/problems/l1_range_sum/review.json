@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "question_id": "algorithm-accumulate",
+      "topic": "algorithm",
+      "prompt": "1からNまでを順に処理する場合、何を保持すればよいですか？",
+      "options": [
+        {"option_id": "running-total", "text": "ここまでの合計"},
+        {"option_id": "all-subsets", "text": "選べる部分集合すべて"},
+        {"option_id": "sorted-input", "text": "並べ替えた入力列"}
+      ],
+      "correct_option_id": "running-total",
+      "explanation": "累積値を0から始め、対象の整数を順に加えれば十分です。"
+    },
+    {
+      "question_id": "framing-inclusive-range",
+      "topic": "problem_framing",
+      "prompt": "問題文の「1からNまで」で特に確認すべきことはどれですか？",
+      "options": [
+        {"option_id": "include-both", "text": "1とNの両方を合計に含める"},
+        {"option_id": "exclude-n", "text": "Nは合計に含めない"},
+        {"option_id": "start-zero", "text": "0からN-1までを足す"}
+      ],
+      "correct_option_id": "include-both",
+      "explanation": "自然言語の範囲が両端を含むことを、ループ範囲へ正しく移す必要があります。"
+    },
+    {
+      "question_id": "complexity-linear",
+      "topic": "complexity",
+      "prompt": "1からNまで一度ずつ加える実装の時間計算量はどれですか？",
+      "options": [
+        {"option_id": "linear", "text": "O(N)"},
+        {"option_id": "constant", "text": "O(1)"},
+        {"option_id": "quadratic", "text": "O(N^2)"}
+      ],
+      "correct_option_id": "linear",
+      "explanation": "N個の整数を一度ずつ処理するため、処理回数はNに比例します。"
+    },
+    {
+      "question_id": "edge-smallest-n",
+      "topic": "edge_cases",
+      "prompt": "ループの開始・終了を確認する最小の境界テストはどれですか？",
+      "options": [
+        {"option_id": "n-one", "text": "N = 1"},
+        {"option_id": "n-middle", "text": "N = 5000"},
+        {"option_id": "n-max", "text": "N = 10000"}
+      ],
+      "correct_option_id": "n-one",
+      "explanation": "N=1ではループが一度だけ動き、両端を含める実装か確認できます。"
+    },
+    {
+      "question_id": "implementation-initial-value",
+      "topic": "implementation",
+      "prompt": "累積用変数の自然な初期値はどれですか？",
+      "options": [
+        {"option_id": "zero", "text": "0"},
+        {"option_id": "one", "text": "1"},
+        {"option_id": "n", "text": "N"}
+      ],
+      "correct_option_id": "zero",
+      "explanation": "加算の単位元である0から始めると、各値を同じ規則で加えられます。"
+    }
+  ]
+}

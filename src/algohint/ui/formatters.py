@@ -2,7 +2,12 @@
 
 from html import escape
 
-from algohint.application.dto import LearnerProblemView, LearningReport, SubmissionView
+from algohint.application.dto import (
+    LearnerProblemView,
+    LearningReport,
+    QuizResult,
+    SubmissionView,
+)
 from algohint.domain.models import Hint
 
 
@@ -77,3 +82,20 @@ def format_report(report: LearningReport) -> str:
         f"- 苦手タグ: {weak}\n"
         f"- 次の推奨問題: `{recommendation}`"
     )
+
+
+def format_quiz_result(result: QuizResult) -> str:
+    """Render deterministic grading while escaping all authored display text."""
+
+    sections = [f"## 小テスト結果: {result.score}/{result.total}"]
+    for index, item in enumerate(result.feedback, start=1):
+        mark = "✅" if item.correct else "❌"
+        detail = (
+            f"### {mark} 問{index}: {escape(item.prompt)}\n\n"
+            f"あなたの回答: {escape(item.selected_text)}"
+        )
+        if not item.correct:
+            detail += f"\n\n正答: {escape(item.correct_text)}"
+        detail += f"\n\n{escape(item.explanation)}"
+        sections.append(detail)
+    return "\n\n".join(sections)

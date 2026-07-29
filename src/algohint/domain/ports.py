@@ -14,6 +14,7 @@ from algohint.domain.models import (
     Profile,
     ProfilePreferences,
     ProviderAvailability,
+    ReviewMaterial,
     TestCase,
     TutorMessage,
     TutorSession,
@@ -32,6 +33,8 @@ class ProblemRepository(Protocol):
     def get_model_solution(self, problem_id: str) -> str: ...
 
     def get_curriculum(self) -> list[dict[str, object]]: ...
+
+    def get_review_material(self, problem_id: str) -> ReviewMaterial: ...
 
 
 class LearningLogRepository(Protocol):

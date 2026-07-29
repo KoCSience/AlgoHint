@@ -59,6 +59,23 @@ def test_hint_explanation_and_report_flow(tmp_path: Path) -> None:
     assert report.average_hint_count == 1.0
 
 
+def test_sample_ac_does_not_release_explanation(tmp_path: Path) -> None:
+    problems, logs, profile = make_services(tmp_path)
+    explanations = ExplanationService(problems, logs)
+    submissions = SubmissionService(problems, logs, LocalJudgeRunner())
+
+    result = submissions.submit(
+        profile.profile_id,
+        "l0_two_values",
+        "a, b = map(int, input().split())\nprint(a + b)",
+        SubmissionMode.SAMPLE,
+    )
+
+    assert result.status is JudgeStatus.AC
+    assert "全テスト" in result.message
+    assert explanations.get_explanation(profile.profile_id, "l0_two_values") is None
+
+
 def test_profiles_have_separate_logs(tmp_path: Path) -> None:
     problems = JsonProblemRepository(DataPaths(DATA_DIR))
     paths = DataPaths(tmp_path / "runtime-data")

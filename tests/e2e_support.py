@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from algohint.application.explanation_service import ExplanationService
+from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
@@ -78,6 +79,7 @@ def build_e2e_app(runtime_root: Path):
     services = ApplicationServices(
         profiles=profile_service,
         selections=ExerciseSelectionService(profile_service, problem_service),
+        reviews=CompletionReviewService(problems, logs),
         problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
         tutor=TutorService(

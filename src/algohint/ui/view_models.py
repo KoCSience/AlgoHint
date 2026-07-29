@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.explanation_service import ExplanationService
 from algohint.application.learning_report_service import LearningReportService
@@ -18,6 +19,7 @@ class ApplicationServices:
 
     profiles: ProfileService
     selections: ExerciseSelectionService
+    reviews: CompletionReviewService
     problems: ProblemService
     submissions: SubmissionService
     tutor: TutorService

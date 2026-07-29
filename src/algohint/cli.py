@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from algohint.application.config import AppConfig
+from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.explanation_service import ExplanationService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
@@ -168,6 +169,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     services = ApplicationServices(
         profiles=profile_service,
         selections=ExerciseSelectionService(profile_service, problem_service),
+        reviews=CompletionReviewService(problems, logs),
         problems=problem_service,
         submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
         tutor=TutorService(

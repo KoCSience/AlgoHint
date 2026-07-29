@@ -8,6 +8,9 @@ from typing import Any, cast
 import gradio as gr
 
 from algohint.application.dto import LearnerDiagnostic
+from algohint.application.completion_review_service import (
+    CompletionRequiredError,
+)
 from algohint.application.tutor_service import CloudConsentRequiredError
 from algohint.domain.enums import (
     HintProviderId,
@@ -17,7 +20,12 @@ from algohint.domain.enums import (
     TutorRole,
 )
 from algohint.domain.models import ProviderAvailability, TutorSession
-from algohint.ui.formatters import format_problem, format_report, format_submission
+from algohint.ui.formatters import (
+    format_problem,
+    format_quiz_result,
+    format_report,
+    format_submission,
+)
 from algohint.ui.view_models import ApplicationServices
 
 PROVIDER_CHOICES = [
@@ -168,6 +176,12 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             )
         if default_selection.persistence_warning:
             initial_tutor_status += f"\n\n{default_selection.persistence_warning}"
+    initial_review = (
+        services.reviews.view(default_profile.profile_id, initial_problem_id)
+        if default_profile is not None and initial_problem_id is not None
+        else None
+    )
+    initial_quiz_questions = initial_review.questions if initial_review is not None else ()
     default_provider = (
         default_profile.preferences.hint_provider
         if default_profile is not None
@@ -307,7 +321,50 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     with gr.Row():
                         show_explanation_button = gr.Button("解説を表示")
                         give_up = gr.Button("ギブアップして解説を見る", variant="stop")
-                    explanation_result = gr.Markdown("ACまたはギブアップ後に解説を表示できます。")
+                    explanation_result = gr.Markdown(
+                        initial_review.explanation
+                        if initial_review is not None
+                        else "ACまたはギブアップ後に解説を表示できます。"
+                    )
+
+                    gr.Markdown("## 完了後の復習小テスト")
+                    completion_status = gr.Markdown(
+                        "5問すべてに回答して、アルゴリズムと問題の捉え方を復習しましょう。"
+                        if initial_review is not None
+                        else "全テストACまたはギブアップ後に小テストを表示します。"
+                    )
+                    quiz_radios: list[gr.Radio] = []
+                    for index in range(5):
+                        initial_question = (
+                            initial_quiz_questions[index]
+                            if index < len(initial_quiz_questions)
+                            else None
+                        )
+                        quiz_radios.append(
+                            gr.Radio(
+                                choices=[
+                                    (option.text, option.option_id)
+                                    for option in initial_question.options
+                                ]
+                                if initial_question is not None
+                                else [],
+                                label=(
+                                    f"問{index + 1}: {initial_question.prompt}"
+                                    if initial_question is not None
+                                    else f"問{index + 1}"
+                                ),
+                                value=None,
+                                visible=initial_question is not None,
+                                elem_id=f"review-quiz-{index + 1}",
+                            )
+                        )
+                    submit_quiz = gr.Button(
+                        "小テストを採点",
+                        variant="primary",
+                        visible=initial_review is not None,
+                        elem_id="submit-review-quiz",
+                    )
+                    quiz_result = gr.Markdown("", elem_id="review-quiz-result")
 
         with gr.Tab("学習レポート"):
             refresh_report = gr.Button("レポートを更新")
@@ -633,7 +690,60 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return "プロフィールを選択してください。"
             return format_report(services.reports.report(profile_id))
 
-        problem_selector.change(
+        def load_completion(profile_id: str | None, problem_id: str | None):
+            """Synchronize explanation and answer-free quiz after selection changes."""
+
+            view = (
+                services.reviews.view(profile_id, problem_id)
+                if profile_id and problem_id
+                else None
+            )
+            if view is None:
+                return (
+                    "ACまたはギブアップ後に解説を表示できます。",
+                    "全テストACまたはギブアップ後に小テストを表示します。",
+                    *[
+                        gr.Radio(choices=[], value=None, visible=False)
+                        for _ in range(5)
+                    ],
+                    gr.Button(visible=False),
+                    "",
+                )
+            updates = [
+                gr.Radio(
+                    choices=[(option.text, option.option_id) for option in question.options],
+                    label=f"問{index}: {question.prompt}",
+                    value=None,
+                    visible=True,
+                )
+                for index, question in enumerate(view.questions, start=1)
+            ]
+            return (
+                view.explanation,
+                "5問すべてに回答して、アルゴリズムと問題の捉え方を復習しましょう。",
+                *updates,
+                gr.Button(visible=True),
+                "",
+            )
+
+        def grade_quiz(
+            profile_id: str | None,
+            problem_id: str | None,
+            *answers: str | None,
+        ) -> str:
+            if not profile_id or not problem_id:
+                return "プロフィールと問題を選択してください。"
+            try:
+                result = services.reviews.grade(
+                    profile_id,
+                    problem_id,
+                    tuple(answers),
+                )
+            except (CompletionRequiredError, ValueError) as error:
+                return str(error)
+            return format_quiz_result(result)
+
+        problem_selection_event = problem_selector.change(
             selected_problem,
             inputs=[profile_selector, problem_selector],
             outputs=[
@@ -645,6 +755,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 submission_result,
             ],
             api_name="select_problem",
+        )
+        problem_selection_event.then(
+            load_completion,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                explanation_result,
+                completion_status,
+                *quiz_radios,
+                submit_quiz,
+                quiz_result,
+            ],
+            api_visibility="private",
         )
         create_profile.click(
             created_profile,
@@ -665,7 +787,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_name="create_profile",
         )
-        profile_selector.change(
+        profile_selection_event = profile_selector.change(
             selected_profile,
             inputs=[profile_selector, problem_selector],
             outputs=[
@@ -682,6 +804,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_name="select_profile",
         )
+        profile_selection_event.then(
+            load_completion,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                explanation_result,
+                completion_status,
+                *quiz_radios,
+                submit_quiz,
+                quiz_result,
+            ],
+            api_visibility="private",
+        )
         provider_selector.change(
             selected_provider,
             inputs=[profile_selector, provider_selector],
@@ -696,11 +830,23 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=[submission_result, latest_diagnostic],
             api_name="run_samples",
         )
-        full_submit.click(
+        full_submission_event = full_submit.click(
             lambda profile, problem, source: submit(profile, problem, source, SubmissionMode.FULL),
             inputs=[profile_selector, problem_selector, code],
             outputs=[submission_result, latest_diagnostic],
             api_name="submit_solution",
+        )
+        full_submission_event.then(
+            load_completion,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                explanation_result,
+                completion_status,
+                *quiz_radios,
+                submit_quiz,
+                quiz_result,
+            ],
+            api_visibility="private",
         )
         tutor_inputs = [
             profile_selector,
@@ -752,11 +898,33 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=explanation_result,
             api_name="show_explanation",
         )
-        give_up.click(
+        give_up_event = give_up.click(
             lambda profile, problem: show_explanation(profile, problem, True),
             inputs=[profile_selector, problem_selector],
             outputs=explanation_result,
             api_name="give_up",
+        )
+        give_up_event.then(
+            load_completion,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                explanation_result,
+                completion_status,
+                *quiz_radios,
+                submit_quiz,
+                quiz_result,
+            ],
+            api_visibility="private",
+        )
+        submit_quiz.click(
+            grade_quiz,
+            inputs=[profile_selector, problem_selector, *quiz_radios],
+            outputs=quiz_result,
+            api_name="grade_review_quiz",
+            # Correctness is still validated by CompletionReviewService. Skipping
+            # component preprocessing also lets the named API accept option IDs
+            # after choices were populated by a prior completion event.
+            preprocess=False,
         )
         refresh_report.click(
             show_report,

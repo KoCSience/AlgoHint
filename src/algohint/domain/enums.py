@@ -97,3 +97,13 @@ class TutorRole(StrEnum):
 
     USER = "user"
     ASSISTANT = "assistant"
+
+
+class QuizTopic(StrEnum):
+    """Required review dimensions represented once in every problem quiz."""
+
+    ALGORITHM = "algorithm"
+    PROBLEM_FRAMING = "problem_framing"
+    COMPLEXITY = "complexity"
+    EDGE_CASES = "edge_cases"
+    IMPLEMENTATION = "implementation"
