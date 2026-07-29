@@ -12,6 +12,12 @@ class AppConfig:
 
     development_mode: bool = False
     default_hint_provider: HintProviderId = HintProviderId.OPENAI
+    openai_model: str = "gpt-5.6-sol"
+    gemini_model: str = "gemini-3.6-flash"
+    gemma_model: str = "google/gemma-4-12B-it"
+    gemma_base_url: str = ""
+    cloud_timeout_seconds: float = 45.0
+    local_timeout_seconds: float = 120.0
 
     @classmethod
     def from_environment(cls, environment_override: str | None = None) -> "AppConfig":
@@ -29,4 +35,8 @@ class AppConfig:
         return cls(
             development_mode=environment == "development",
             default_hint_provider=provider,
+            openai_model=os.environ.get("ALGOHINT_OPENAI_MODEL", "gpt-5.6-sol"),
+            gemini_model=os.environ.get("ALGOHINT_GEMINI_MODEL", "gemini-3.6-flash"),
+            gemma_model=os.environ.get("ALGOHINT_GEMMA_MODEL", "google/gemma-4-12B-it"),
+            gemma_base_url=os.environ.get("ALGOHINT_GEMMA_BASE_URL", ""),
         )
