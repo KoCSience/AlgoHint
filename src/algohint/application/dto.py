@@ -70,6 +70,11 @@ class LearningReport:
     average_attempt_count: float
     weak_tags: tuple[tuple[str, int], ...]
     recommended_problem_id: str | None
+    give_up_count: int
+    solve_after_hint_rate: float
+    research_run_count: int
+    research_grounded_rate: float
+    average_research_latency_ms: float
 
 
 @dataclass(frozen=True)
@@ -208,3 +213,21 @@ class CodeReviewHistoryPage:
     page_size: int
     total_count: int
     quota: ReviewQuotaStatus
+
+
+@dataclass(frozen=True)
+class ResearchEvaluationReport:
+    """Explainable quality metrics from fixed cases and persisted real runs."""
+
+    fixed_case_count: int
+    covered_problem_count: int
+    knowledge_source_count: int
+    recorded_run_count: int
+    grounded_completion_rate: float
+    citation_integrity_rate: float
+    allowed_domain_rate: float
+    non_answer_rate: float
+    fallback_rate: float
+    average_search_requests: float
+    average_latency_ms: float
+    cache_hit_rate: float

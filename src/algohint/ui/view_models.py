@@ -8,6 +8,7 @@ from algohint.application.exercise_selection_service import ExerciseSelectionSer
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
+from algohint.application.research_service import GroundedResearchService
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
 from algohint.domain.ports import ProblemRepository
@@ -26,3 +27,4 @@ class ApplicationServices:
     completions: CompletionService
     reports: LearningReportService
     teacher_repository: ProblemRepository
+    research: GroundedResearchService | None = None

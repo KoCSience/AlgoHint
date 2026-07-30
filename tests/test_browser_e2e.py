@@ -101,6 +101,14 @@ def test_hint_coach_in_rendered_browser(
     )
     expect(page.get_by_text("二つの数の合計", exact=False).first).to_be_visible()
 
+    page.get_by_text("根拠付きWeb検索（Exa）", exact=True).click()
+    page.locator("#research-consent input").check()
+    page.locator("#request-grounded-research").click()
+    expect(page.locator("#research-result")).to_contain_text("根拠付きヒント")
+    expect(page.locator("#research-result")).to_contain_text("docs.python.org")
+    expect(page.locator("#research-consent input")).not_to_be_checked()
+    assert len(provider.research_requests) == 1
+
     _select_dropdown(page, "provider-selector", "GPT-5.6")
     expect(page.locator("#cloud-consent input")).not_to_be_checked()
     _select_dropdown(page, "provider-selector", "Gemini")
@@ -167,6 +175,7 @@ def test_hint_coach_in_rendered_browser(
     )
     assert len(provider.review_requests) == 1
 
+    page.get_by_role("tab", name="問題演習").click()
     page.locator("#clear-tutor-history").click()
     expect(page.locator("#tutor-status")).to_contain_text("クリア")
     expect(page.locator("#tutor-chat")).not_to_contain_text("gemini / gemini-e2e")

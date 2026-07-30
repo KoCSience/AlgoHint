@@ -78,6 +78,8 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "固定小テストを採点" in config_text
     assert "保存済みAIレビューを表示" in config_text
     assert "現在コードを新規AIレビュー" in config_text
+    assert "根拠付きWeb検索（Exa）" in config_text
+    assert "コード、質問、プロフィール、履歴、隠しテストは送信しません" in config_text
 
 
 def test_fallback_notice_is_actionable_without_raw_provider_data() -> None:

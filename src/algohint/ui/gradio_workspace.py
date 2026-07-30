@@ -16,6 +16,7 @@ from algohint.application.completion_review_service import (
     ReviewConsentRequiredError,
 )
 from algohint.application.tutor_service import CloudConsentRequiredError
+from algohint.application.research_service import ResearchConsentRequiredError
 from algohint.domain.enums import (
     CompletionReason,
     HintProviderId,
@@ -26,7 +27,14 @@ from algohint.domain.enums import (
     SubmissionMode,
     TutorRole,
 )
-from algohint.domain.models import ProviderAvailability, TutorSession
+from algohint.domain.models import (
+    ProviderAvailability,
+    ResearchHistoryEntry,
+    ResearchResult,
+    ResearchUsage,
+    TutorSession,
+)
+from algohint.infrastructure.gemma_research_provider import ResearchProviderError
 from algohint.ui.formatters import (
     format_problem,
     format_code_review,
@@ -168,6 +176,66 @@ def _format_fallback_notice(reason_code: str | None) -> str:
         FALLBACK_NOTICES.get(reason_code) if reason_code is not None else None
     ) or "選択モデルを利用できませんでした。接続設定を確認してください。"
     return f"{detail} RuleBasedヒントを表示しました。"
+
+
+def _format_research_usage(usage: ResearchUsage) -> str:
+    """Render cost controls without suggesting that response estimates are invoices."""
+
+    icon = "🟢" if usage.state == "available" else "🟡" if usage.state == "warning" else "🔴"
+    return (
+        f"{icon} **Exa内部予算**: 今月 ${usage.calendar_month_cost_usd} / "
+        f"${usage.monthly_budget_usd}、直近30日 ${usage.rolling_30_day_cost_usd}、"
+        f"Search {usage.calendar_month_searches}回（残り最大"
+        f"{usage.remaining_searches}回）。状態: `{usage.state}`"
+    )
+
+
+def _safe_markdown_text(value: str) -> str:
+    """Neutralize link delimiters in untrusted external source titles."""
+
+    return value.replace("[", "［").replace("]", "］").replace("\n", " ").strip()
+
+
+def _format_research_result(result: ResearchResult) -> str:
+    """Render one grounded hint and its independently validated source list."""
+
+    lines = ["## 根拠付きヒント", result.text]
+    if result.citations:
+        lines.append("### 出典")
+        for citation in result.citations:
+            title = _safe_markdown_text(citation.title)
+            lines.append(
+                f"- [{citation.citation_id}] [{title}]({citation.url}) "
+                f"（{citation.domain}）"
+            )
+    lines.extend(
+        (
+            "### Agentic Research trace",
+            "`" + " → ".join(result.trace) + "`",
+            (
+                f"Search {result.search_requests}回 / Contents {result.content_pages}ページ / "
+                f"cache hit {result.cache_hits}回 / {result.elapsed_ms} ms"
+            ),
+        )
+    )
+    if result.fallback:
+        lines.append("検索を完了できなかったため、静的ヒントへフォールバックしました。")
+    return "\n\n".join(lines)
+
+
+def _format_research_history(entries: tuple[ResearchHistoryEntry, ...]) -> str:
+    """Show bounded, profile-scoped evidence without raw retrieved contents."""
+
+    if not entries:
+        return ""
+    lines = ["### 保存済みResearch履歴"]
+    for entry in entries[:5]:
+        lines.append(
+            f"- {entry.created_at.astimezone().strftime('%Y-%m-%d %H:%M')} / "
+            f"{entry.judge_status} / run `{entry.result.run_id[:12]}` / "
+            f"Search {entry.result.search_requests}回"
+        )
+    return "\n".join(lines)
 
 
 def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bool) -> gr.Blocks:
@@ -385,6 +453,45 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         "この問題のヒント履歴をクリア",
                         elem_id="clear-tutor-history",
                     )
+
+                    with gr.Accordion("根拠付きWeb検索（Exa）", open=False):
+                        gr.Markdown(
+                            "公開問題の題名・レビュー済み要約・概念タグ・一般化した"
+                            "Judge状態だけをGemma Serverへ送ります。コード、質問、"
+                            "プロフィール、履歴、隠しテストは送信しません。"
+                        )
+                        research_consent = gr.Checkbox(
+                            label=(
+                                "この1回について、上記の公開情報を使ったExa検索に"
+                                "同意します"
+                            ),
+                            value=False,
+                            elem_id="research-consent",
+                        )
+                        with gr.Row():
+                            request_research_button = gr.Button(
+                                "根拠付きヒントを検索",
+                                variant="secondary",
+                                interactive=services.research is not None,
+                                elem_id="request-grounded-research",
+                            )
+                            refresh_research_usage_button = gr.Button(
+                                "検索予算を確認",
+                                interactive=services.research is not None,
+                                elem_id="refresh-research-usage",
+                            )
+                        research_usage = gr.Markdown(
+                            (
+                                "Gemma Serverへ接続して検索予算を確認できます。"
+                                if services.research is not None
+                                else "Transformers HTTP版Gemma Serverが未設定のため利用できません。"
+                            ),
+                            elem_id="research-usage",
+                        )
+                        research_result = gr.Markdown(
+                            "",
+                            elem_id="research-result",
+                        )
 
                     gr.Markdown(
                         "完了後の小テストは、全テストACまたはギブアップで解禁されます。",
@@ -933,6 +1040,43 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return [], "プロフィールと問題を選択してください。"
             services.tutor.clear_session(profile_id, problem_id)
             return [], "この問題の質問・ヒント履歴をクリアしました。"
+
+        def refresh_research_usage():
+            """Fetch budget state explicitly without triggering Exa retrieval."""
+
+            if services.research is None:
+                return "Research機能は設定されていません。"
+            try:
+                return _format_research_usage(services.research.usage())
+            except ResearchProviderError as error:
+                return f"検索予算を確認できませんでした（{error.reason}）。"
+
+        def request_grounded_research(
+            profile_id: str | None,
+            problem_id: str | None,
+            consent: bool,
+        ):
+            """Run one explicit public-context research action and reset consent."""
+
+            if services.research is None:
+                return "", "Research機能は設定されていません。", False
+            if not profile_id or not problem_id:
+                return "", "プロフィールと問題を選択してください。", False
+            try:
+                result = services.research.research(
+                    profile_id,
+                    problem_id,
+                    consent=consent,
+                )
+                history = services.research.history(profile_id, problem_id, limit=5)
+            except (ResearchConsentRequiredError, ResearchProviderError, ValueError) as error:
+                reason = error.reason if isinstance(error, ResearchProviderError) else str(error)
+                return "", f"根拠付き検索を実行できませんでした（{reason}）。", False
+            rendered = _format_research_result(result)
+            saved = _format_research_history(history)
+            if saved:
+                rendered += "\n\n" + saved
+            return rendered, _format_research_usage(result.usage), False
 
         def show_explanation(
             profile_id: str | None,
@@ -1561,6 +1705,11 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=personalized_outputs,
             api_visibility="private",
         )
+        problem_selection_event.then(
+            lambda: (False, "", "問題ごとの検索予算は「検索予算を確認」で確認できます。"),
+            outputs=[research_consent, research_result, research_usage],
+            api_visibility="private",
+        )
         create_profile.click(
             created_profile,
             inputs=profile_name,
@@ -1631,6 +1780,11 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             load_personalized_quiz,
             inputs=[profile_selector, problem_selector, accepted_source],
             outputs=personalized_outputs,
+            api_visibility="private",
+        )
+        profile_selection_event.then(
+            lambda: (False, "", "検索前に専用の同意欄を確認してください。"),
+            outputs=[research_consent, research_result, research_usage],
             api_visibility="private",
         )
         provider_selector.change(
@@ -1749,6 +1903,21 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             inputs=[profile_selector, problem_selector],
             outputs=[tutor_chat, tutor_status],
             api_name="clear_tutor_history",
+        )
+        request_research_button.click(
+            request_grounded_research,
+            inputs=[profile_selector, problem_selector, research_consent],
+            outputs=[research_result, research_usage, research_consent],
+            api_name="request_grounded_research",
+            trigger_mode="once",
+            concurrency_limit=1,
+            concurrency_id="grounded-research",
+            show_progress="full",
+        )
+        refresh_research_usage_button.click(
+            refresh_research_usage,
+            outputs=research_usage,
+            api_name="research_usage",
         )
         show_explanation_button.click(
             lambda profile, problem: show_explanation(profile, problem, False),

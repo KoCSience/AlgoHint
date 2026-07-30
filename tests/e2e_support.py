@@ -12,6 +12,7 @@ from algohint.application.exercise_selection_service import ExerciseSelectionSer
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
+from algohint.application.research_service import GroundedResearchService
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
 from algohint.domain.enums import CodeReviewCategory, HintProviderId
@@ -25,9 +26,15 @@ from algohint.domain.models import (
     HintGenerationRequest,
     PersonalizedQuizRequest,
     ProviderAvailability,
+    ResearchProviderRequest,
+    ResearchResult,
+    ResearchUsage,
 )
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
+from algohint.infrastructure.json_knowledge_base_repository import (
+    JsonKnowledgeBaseRepository,
+)
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.json_tutor_session_repository import (
@@ -37,6 +44,9 @@ from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
 from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
 from algohint.infrastructure.sqlite_review_history_repository import (
     SqliteReviewHistoryRepository,
+)
+from algohint.infrastructure.sqlite_research_history_repository import (
+    SqliteResearchHistoryRepository,
 )
 from algohint.ui.gradio_app import build_app
 from algohint.ui.view_models import ApplicationServices
@@ -53,6 +63,7 @@ class DeterministicGeminiProvider:
         self.requests: list[HintGenerationRequest] = []
         self.review_requests: list[CodeReviewRequest] = []
         self.quiz_requests: list[PersonalizedQuizRequest] = []
+        self.research_requests: list[ResearchProviderRequest] = []
 
     def availability(self) -> ProviderAvailability:
         return ProviderAvailability(
@@ -115,6 +126,51 @@ class DeterministicGeminiProvider:
             model_name="gemini-e2e",
         )
 
+    def usage(self) -> ResearchUsage:
+        """Return a deterministic local-budget snapshot for UI E2E tests."""
+
+        return ResearchUsage(
+            available=True,
+            state="available",
+            calendar_month="2026-07",
+            monthly_budget_usd="9",
+            warning_budget_usd="7",
+            calendar_month_cost_usd="0.009",
+            rolling_30_day_cost_usd="0.009",
+            calendar_month_searches=1,
+            rolling_30_day_searches=1,
+            today_searches=1,
+            calendar_month_content_pages=2,
+            remaining_searches=999,
+            pricing_reviewed_at="2026-07-30",
+            pricing_valid_until="2026-10-28",
+        )
+
+    def research(self, request: ResearchProviderRequest) -> ResearchResult:
+        """Return one cited response while retaining only the public request."""
+
+        self.research_requests.append(request)
+        return ResearchResult(
+            model="gemma-e2e",
+            run_id="0123456789abcdef0123456789abcdef",
+            text="入力を数値に変換する理由を確認しましょう。[S1]",
+            citations=(
+                {
+                    "citation_id": "S1",
+                    "title": "Python input",
+                    "url": "https://docs.python.org/3/library/functions.html#input",
+                    "domain": "docs.python.org",
+                },
+            ),
+            trace=("requested", "planned", "searched", "completed"),
+            search_requests=1,
+            content_pages=2,
+            cache_hits=0,
+            elapsed_ms=10,
+            fallback=False,
+            usage=self.usage(),
+        )
+
 
 def build_e2e_app(runtime_root: Path):
     """Build an isolated app with real repositories and a fake cloud boundary."""
@@ -126,6 +182,7 @@ def build_e2e_app(runtime_root: Path):
     logs = JsonLearningLogRepository(runtime_paths, profiles)
     sessions = JsonTutorSessionRepository(runtime_paths)
     provider = DeterministicGeminiProvider()
+    research_history = SqliteResearchHistoryRepository(runtime_paths, profiles)
     profile_service = ProfileService(
         profiles,
         logs,
@@ -154,8 +211,16 @@ def build_e2e_app(runtime_root: Path):
             RuleBasedHintProvider(),
         ),
         completions=CompletionService(logs),
-        reports=LearningReportService(problems, logs),
+        reports=LearningReportService(problems, logs, research_history),
         teacher_repository=problems,
+        research=GroundedResearchService(
+            problems,
+            JsonKnowledgeBaseRepository(content_paths),
+            profiles,
+            logs,
+            provider,
+            research_history,
+        ),
     )
     return build_app(services, teacher_mode=False, shared_mode=False), provider
 

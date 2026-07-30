@@ -82,6 +82,11 @@ def format_report(report: LearningReport) -> str:
         f"- 正答率: {report.correctness_rate:.0%}\n"
         f"- 平均ヒント数: {report.average_hint_count:.2f}\n"
         f"- 平均提出回数: {report.average_attempt_count:.2f}\n"
+        f"- ギブアップ数: {report.give_up_count}\n"
+        f"- ヒント利用後の正解割合: {report.solve_after_hint_rate:.0%}\n"
+        f"- 根拠付きResearch回数: {report.research_run_count}\n"
+        f"- Research根拠取得率: {report.research_grounded_rate:.0%}\n"
+        f"- Research平均応答時間: {report.average_research_latency_ms:.0f} ms\n"
         f"- 苦手タグ: {weak}\n"
         f"- 次の推奨問題: `{recommendation}`"
     )

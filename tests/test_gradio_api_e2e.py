@@ -70,6 +70,29 @@ def test_tutor_flow_through_named_gradio_apis(
     assert "Gemini" in provider_status
     assert consent is False
 
+    rejected_research = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        False,
+        api_name="/request_grounded_research",
+    )
+    assert "同意" in rejected_research[1]
+    assert provider.research_requests == []
+
+    grounded = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        True,
+        api_name="/request_grounded_research",
+    )
+    assert "根拠付きヒント" in grounded[0]
+    assert "docs.python.org" in grounded[0]
+    assert "今月 $0.009" in grounded[1]
+    assert grounded[2] is False
+    assert len(provider.research_requests) == 1
+    assert not hasattr(provider.research_requests[0], "source_code")
+    assert not hasattr(provider.research_requests[0], "profile_id")
+
     rejected = gradio_client.predict(
         PROFILE_ID,
         PROBLEM_ID,
