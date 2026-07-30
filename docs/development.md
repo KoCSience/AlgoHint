@@ -260,9 +260,10 @@ uv run algohint doctor --provider gemma
 ```
 
 同一ホストでは`./scripts/run-local-stack.sh`、別ホストでは
-`ALGOHINT_SSH_TARGET='<SSH設定名>' ./scripts/run-ssh-stack.sh`を使うと、
-Gemma、トンネル、AlgoHintを順に起動できます。各スクリプトは自分が新規起動した
-Gemmaだけを終了時に停止します。
+`$HOME/.config/algohint/gemma-ssh-target`へSSH aliasを設定してから
+`./scripts/run-ssh-stack.sh`を使うと、Gemma、トンネル、AlgoHintを順に起動できます。
+設定fileの作成と検証は[Gemma Server接続ガイド](gemma-server.md#1-ssh接続の確認)を
+参照してください。各スクリプトは自分が新規起動したGemmaだけを終了時に停止します。
 
 doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
 成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を

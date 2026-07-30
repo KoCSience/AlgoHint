@@ -168,7 +168,8 @@ vLLMが利用できない場合は、別LinuxホストのPyTorch／Transformers�
 version付きサーバーのcontrolが配置済みか確認します。
 
 ```bash
-target="${ALGOHINT_SSH_TARGET:?SSH設定名を指定してください}"
+./scripts/check-gemma-ssh.sh
+target="$(<"$HOME/.config/algohint/gemma-ssh-target")"
 ssh -T "$target" \
   'test -x "$HOME/programs/algohint-gemma-server/current/scripts/server-control.sh"'
 uv run algohint doctor --provider gemma

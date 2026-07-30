@@ -6,12 +6,10 @@ umask 077
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 manifest="$project_root/config/gemma-server-release.conf"
 remote_bootstrap="$project_root/scripts/bootstrap-gemma-server-remote.sh"
-ssh_target="${ALGOHINT_SSH_TARGET:-}"
+# shellcheck source=scripts/lib/gemma-ssh-target.sh
+. "$project_root/scripts/lib/gemma-ssh-target.sh"
+ssh_target="$(algohint_read_gemma_ssh_target)"
 
-if [[ -z "$ssh_target" || "$ssh_target" == -* || "$ssh_target" == *$'\n'* ]]; then
-    echo "ALGOHINT_SSH_TARGET must be one SSH host or configured alias." >&2
-    exit 2
-fi
 if ! command -v ssh >/dev/null 2>&1; then
     echo "ssh is required to install the remote Gemma Server." >&2
     exit 2
@@ -20,7 +18,6 @@ if [[ ! -r "$manifest" || ! -r "$remote_bootstrap" ]]; then
     echo "Gemma Server release manifest or remote bootstrap is missing." >&2
     exit 2
 fi
-
 # This tracked file contains only a public URL and immutable commit SHA.
 # Validate both again before constructing the remote shell command.
 . "$manifest"

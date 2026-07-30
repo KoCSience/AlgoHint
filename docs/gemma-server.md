@@ -17,7 +17,7 @@ controllerの正本は
 | 表記          | 実体                       | 主な処理                                         |
 | ------------- | -------------------------- | ------------------------------------------------ |
 | AlgoHint host | AlgoHintを動かす現在のPC   | SSH、credential同期、tunnel、doctor、UI          |
-| GPU host      | このガイドでは`143-home`   | Gemma Server、GPU、model cache、remote credential |
+| GPU host      | 設定ファイルで選んだ接続先 | Gemma Server、GPU、model cache、remote credential |
 | GitHub        | 公開repository             | 固定SHAの配布元                                  |
 
 各command blockの前に実行場所を示します。`$HOME`はcommandを実行しているhostのhome
@@ -48,28 +48,52 @@ learner code、model出力、credentialをlog/statusへ保存しません。完�
 
 ## 1. SSH接続の確認
 
-`143-home`は例です。利用者の`~/.ssh/config`にあるaliasへ置き換えます。
+AlgoHintが使うSSH接続先は、AlgoHint hostの
+`$HOME/.config/algohint/gemma-ssh-target`だけで管理します。ファイルはshellとして
+読み込まれず、検証済みのalias 1行だけがSSHへ渡されます。ユーザー名、port、鍵のpathは
+このファイルではなく`~/.ssh/config`へ設定してください。
 
 **実行場所: AlgoHint host（AlgoHint repository root）**
 
 ```bash
-export ALGOHINT_SSH_TARGET='143-home'
-ssh -T "$ALGOHINT_SSH_TARGET" \
-  'printf "SSH connection OK: AlgoHint host -> GPU host\n"'
+unset ALGOHINT_SSH_TARGET
+ssh_target_file="$HOME/.config/algohint/gemma-ssh-target"
+install -d -m 700 "$HOME/.config/algohint"
+(umask 077; "${EDITOR:-vi}" "$ssh_target_file")
+chmod 600 "$ssh_target_file"
+```
+
+ファイルには`~/.ssh/config`で設定済みのaliasを1行だけ記述します。空行、複数行、
+symlink、mode 600以外のfileは拒否されます。手動SSHを行う後続手順のため、検証後の
+値を現在のterminalだけで使う非export変数へ読み込みます。terminalを開き直した場合は
+この代入を再実行してください。
+
+```bash
+./scripts/check-gemma-ssh.sh
+ssh_target="$(<"$ssh_target_file")"
+```
+
+成功時はSSHのbannerやMOTDに続き、AlgoHint host側で次の行が表示され、終了code 0を
+返します。
+
+```text
+SSH connection OK: AlgoHint host -> GPU host (target: <SSH設定名>)
 ```
 
 alias、host key、公開鍵認証を先に解決します。bootstrapはpassword、sudo、root権限を
-要求しません。以前記載していた`ssh -T "$ALGOHINT_SSH_TARGET" 'true'`は、成功時に
-何も表示せず終了code 0を返す確認方法でした。上のcommandは同じ接続確認に成功表示を
-加えたものです。
+要求しません。以前のガイドにあったremote `printf`が
+`printf "...": command not found`となる場合、SSH sessionの開始後にremote shellが
+成功表示用commandを期待どおり解釈できていません。後続installerが
+`Pinned Gemma Server release installed ...`を、同期helperが`already synchronized`を
+表示した場合、その2処理はそれぞれ正常終了しています。接続確認にはremoteで`true`だけを
+実行し、成功文をlocal表示する上のhelperを使用してください。
 
 ## 2. 固定releaseの初回配備
 
 **実行場所: AlgoHint host（AlgoHint repository root）**
 
 ```bash
-ALGOHINT_SSH_TARGET='143-home' \
-  ./scripts/install-gemma-server-ssh.sh
+./scripts/install-gemma-server-ssh.sh
 ```
 
 処理の流れ:
@@ -85,12 +109,14 @@ AlgoHintのmanifestを検証
   → 停止状態を確認してcurrent symlinkをatomic replace
 ```
 
+成功時の最終行は`Pinned Gemma Server release installed on <SSH設定名>.`です。
+同じreleaseを再実行したときの`Release is already current: <40桁SHA>`も正常です。
+
 remote install rootを変える場合:
 
 **実行場所: AlgoHint host（AlgoHint repository root）**
 
 ```bash
-ALGOHINT_SSH_TARGET='143-home' \
 ALGOHINT_SSH_REMOTE_APP_ROOT='/srv/algohint-gemma-server' \
   ./scripts/install-gemma-server-ssh.sh
 ```
@@ -105,7 +131,7 @@ GPU hostで初回だけAPI keyを作成します。値をterminalへ表示しま
 **実行場所: AlgoHint host**
 
 ```bash
-ssh "$ALGOHINT_SSH_TARGET"
+ssh "$ssh_target"
 ```
 
 SSH login後はpromptと`$HOME`がGPU hostのものに変わります。
@@ -153,9 +179,12 @@ exit
 **実行場所: AlgoHint host（AlgoHint repository root）**
 
 ```bash
-ALGOHINT_SSH_TARGET='143-home' \
-  ./scripts/sync-gemma-credentials-ssh.sh
+./scripts/sync-gemma-credentials-ssh.sh
 ```
+
+初回は`Gemma client credentials synchronized: <path>`、同じkeyの再実行は
+`Gemma client credentials are already synchronized: <path>`と表示されます。どちらも
+終了code 0の成功です。
 
 内容を表示せず、local fileの属性だけを確認します。
 
@@ -178,8 +207,7 @@ GPU host側でAPI keyを安全なeditorまたは非表示のshell処理により
 **実行場所: AlgoHint host（AlgoHint repository root）**
 
 ```bash
-ALGOHINT_SSH_TARGET='143-home' \
-  ./scripts/sync-gemma-credentials-ssh.sh --replace
+./scripts/sync-gemma-credentials-ssh.sh --replace
 ```
 
 異なる既存fileは、`~/.config/algohint/_GARBAGE/`へmode 600のまま退避されます。新旧keyを
@@ -192,7 +220,7 @@ GPU、dtype、必要GPU数、portをmodel download前に確認します。
 **実行場所: AlgoHint host**
 
 ```bash
-ssh -T "$ALGOHINT_SSH_TARGET" \
+ssh -T "$ssh_target" \
   '"$HOME/programs/algohint-gemma-server/current/.venv/bin/algohint-gemma-preflight"'
 ```
 
@@ -201,7 +229,7 @@ modelを事前取得する場合は、GPU hostの資格情報をsourceした非�
 **実行場所: AlgoHint host**
 
 ```bash
-ssh "$ALGOHINT_SSH_TARGET"
+ssh "$ssh_target"
 ```
 
 **実行場所: GPU host（上のSSH session内）**
@@ -224,7 +252,7 @@ HF_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/algohint-gemma-server/huggingface" \
 **実行場所: AlgoHint host**
 
 ```bash
-ssh "$ALGOHINT_SSH_TARGET"
+ssh "$ssh_target"
 ```
 
 **実行場所: GPU host（上のSSH session内）**
@@ -262,7 +290,6 @@ GPU hostのSSH sessionを開いている場合は`exit`でAlgoHint hostへ戻っ
 
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
-ALGOHINT_SSH_TARGET='143-home' \
   ./scripts/run-ssh-stack.sh
 ```
 
@@ -297,7 +324,6 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
-ALGOHINT_SSH_TARGET='143-home' \
   ./scripts/run-ssh-stack.sh --keep-remote doctor --provider gemma
 ```
 
@@ -319,6 +345,9 @@ doctorはprompt、問題文、codeを送らず、`/v1/models`でbackend、model 
 | `401`                                                             | keyを表示せず同期helperの`--replace`とdoctorを順に実行              |
 | `429`                                                             | 別生成中。clientのbounded retryを待つ                              |
 | tunnel起動失敗                                                    | local 18000競合、SSH forwarding設定、remote 18080を確認            |
+| `gemma-ssh-target`検証失敗                                        | 通常file、現在ユーザー所有、mode 600、alias 1行だけか確認          |
+| `ALGOHINT_SSH_TARGET is no longer supported`                      | 変数を`unset`し、`~/.config/algohint/gemma-ssh-target`へ移行       |
+| 旧接続確認の`printf ...: command not found`                       | remote成功表示の解釈失敗。`check-gemma-ssh.sh`で再確認             |
 
 ## Update and rollback
 

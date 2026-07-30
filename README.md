@@ -47,27 +47,63 @@ credentialsをホーム配下へ作成します。`.env`やリポジトリ内へ
 
 別ホストのGemmaを使う場合は、AlgoHintより先に互換性のある
 [AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)を
-SSH接続先へ配備する必要があります。このAlgoHint commitが検証したGemma Serverの
+SSH接続先へ配備し、起動する必要があります。このAlgoHint commitが検証したGemma Serverの
 public repositoryと40桁commit SHAは
-[release manifest](config/gemma-server-release.conf)に固定しています。SSH設定名
-（例: `gpu-learning-host`）を自分の接続先へ置き換え、接続と初回配備を行います。
+[release manifest](config/gemma-server-release.conf)に固定しています。接続先は
+`$HOME/.config/algohint/gemma-ssh-target`だけで管理します。初回にディレクトリと
+ファイルを現在ユーザーだけが読み書きできる権限で作成します。
 
 ```bash
-ssh -T 'gpu-learning-host' \
-  'printf "SSH connection OK: AlgoHint host -> GPU host\n"'
-ALGOHINT_SSH_TARGET='gpu-learning-host' \
-  ./scripts/install-gemma-server-ssh.sh
+unset ALGOHINT_SSH_TARGET
+ssh_target_file="$HOME/.config/algohint/gemma-ssh-target"
+install -d -m 700 "$HOME/.config/algohint"
+(umask 077; "${EDITOR:-vi}" "$ssh_target_file")
+chmod 600 "$ssh_target_file"
 ```
 
-必要なGPU、credentials、モデル、`server-control.sh`の配置順は
-[Gemma接続・移行ガイド](docs/gemma-server.md)を参照してください。controlが未配置なら
-`run-ssh-stack.sh`はサーバーやトンネルを開始せず、期待パスと復旧先を表示して停止します。
-接続後はremote credentials全体をコピーせず、次のhelperでGemma API keyだけを
-AlgoHint hostへ同期します。
+ファイルには`~/.ssh/config`で設定済みのaliasを1行だけ記述します。ユーザー名やportは
+このファイルへ書かず、SSH config側で管理します。
+
+```text
+143-home
+```
+
+接続確認と初回配備を順に実行します。接続確認の成功文はremote shellではなく
+AlgoHint hostで表示するため、remote shellによる`printf`の解釈差に依存しません。
 
 ```bash
-ALGOHINT_SSH_TARGET='gpu-learning-host' \
-  ./scripts/sync-gemma-credentials-ssh.sh
+./scripts/check-gemma-ssh.sh
+./scripts/install-gemma-server-ssh.sh
+```
+
+成功時は末尾に次のように表示されます。installerを再実行したときの
+`Release is already current: <40桁SHA>`も正常です。
+
+```text
+SSH connection OK: AlgoHint host -> GPU host (target: 143-home)
+Pinned Gemma Server release installed on 143-home.
+```
+
+必要なGPU、モデル、`server-control.sh`の配置順は
+[Gemma接続・移行ガイド](docs/gemma-server.md)を参照してください。GPU hostの
+`${XDG_CONFIG_HOME:-$HOME/.config}/algohint-gemma-server/credentials`へGemma API keyと
+必要なHF tokenを作る手順は
+[Remote credentials](docs/gemma-server.md#3-remote-credentials)にあります。controlが
+未配置なら`run-ssh-stack.sh`はサーバーやトンネルを開始せず、期待パスと復旧先を
+表示して停止します。
+
+接続後はremote credentials全体をコピーせず、次のhelperでGemma API keyだけを
+AlgoHint hostの`$HOME/.config/algohint/gemma-remote-credentials`へ同期します。
+
+```bash
+./scripts/sync-gemma-credentials-ssh.sh
+```
+
+初回同期と同じkeyでの再実行では、次のいずれかが表示され、どちらも成功です。
+
+```text
+Gemma client credentials synchronized: /home/<user>/.config/algohint/gemma-remote-credentials
+Gemma client credentials are already synchronized: /home/<user>/.config/algohint/gemma-remote-credentials
 ```
 
 ## Dockerで起動
@@ -106,13 +142,12 @@ Gemmaだけを停止し、継続する場合は`--keep-gemma`を付けます。
 ./scripts/run-local-stack.sh
 ```
 
-別ホストのGemma、SSHトンネル、ローカルAlgoHintをまとめて起動する場合は、SSH設定名を
-環境変数で渡します。下記の`gpu-learning-host`は自分のSSH設定名へ置き換えてください。
-終了後も新規起動したリモートGemmaを維持する場合は`--keep-remote`を付けます。
+別ホストのGemma、SSHトンネル、ローカルAlgoHintをまとめて起動する場合も、上で作成した
+`gemma-ssh-target`を自動的に使います。終了後も新規起動したリモートGemmaを維持する場合は
+`--keep-remote`を付けます。
 
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
-ALGOHINT_SSH_TARGET='gpu-learning-host' \
   ./scripts/run-ssh-stack.sh
 ```
 

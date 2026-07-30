@@ -19,6 +19,16 @@ def write_executable(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
+def write_ssh_target(home: Path, target: str = "gpu-test-host") -> None:
+    """Create the protected one-line SSH target consumed by public scripts."""
+
+    target_path = home / ".config" / "algohint" / "gemma-ssh-target"
+    target_path.parent.mkdir(parents=True)
+    target_path.parent.chmod(0o700)
+    target_path.write_text(f"{target}\n", encoding="ascii")
+    target_path.chmod(0o600)
+
+
 def remote_credentials(home: Path, *, mode: int = 0o600) -> Path:
     """Create a protected remote fixture containing client and server-only values."""
 
@@ -50,6 +60,7 @@ def environment(tmp_path: Path, *, ssh_body: str | None = None) -> dict[str, str
     remote_home.mkdir()
     local_home = tmp_path / "local-home"
     local_home.mkdir()
+    write_ssh_target(local_home)
     remote_credentials(remote_home)
     body = ssh_body or (
         'export HOME="$FAKE_REMOTE_HOME"\n'
@@ -57,13 +68,14 @@ def environment(tmp_path: Path, *, ssh_body: str | None = None) -> dict[str, str
         "exec bash -s\n"
     )
     write_executable(fake_bin / "ssh", body)
-    return {
+    resolved_environment = {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "HOME": str(local_home),
         "FAKE_REMOTE_HOME": str(remote_home),
-        "ALGOHINT_SSH_TARGET": "gpu-test-host",
     }
+    resolved_environment.pop("ALGOHINT_SSH_TARGET", None)
+    return resolved_environment
 
 
 def run_sync(
@@ -251,7 +263,7 @@ def test_sync_rejects_a_local_credentials_symlink_before_ssh(
         / "algohint"
         / "gemma-remote-credentials"
     )
-    credentials.parent.mkdir(parents=True)
+    credentials.parent.mkdir(parents=True, exist_ok=True)
     credentials.parent.chmod(0o700)
     symlink_target = tmp_path / "outside-credentials"
     symlink_target.write_text("must-not-change\n", encoding="utf-8")
@@ -287,9 +299,9 @@ def test_sync_rejects_tampered_multiline_response(tmp_path: Path) -> None:
     assert not credentials.exists()
 
 
-def test_sync_rejects_unsafe_target_before_ssh(tmp_path: Path) -> None:
+def test_sync_rejects_removed_target_environment_before_ssh(tmp_path: Path) -> None:
     resolved_environment = environment(tmp_path)
-    resolved_environment["ALGOHINT_SSH_TARGET"] = "-oProxyCommand=unsafe"
+    resolved_environment["ALGOHINT_SSH_TARGET"] = ""
     marker = tmp_path / "ssh-called"
     write_executable(
         tmp_path / "bin" / "ssh",
@@ -305,5 +317,6 @@ def test_sync_rejects_unsafe_target_before_ssh(tmp_path: Path) -> None:
     )
 
     assert completed.returncode == 2
-    assert "must be one SSH host" in completed.stderr
+    assert "is no longer supported" in completed.stderr
+    assert "unset ALGOHINT_SSH_TARGET" in completed.stderr
     assert not marker.exists()

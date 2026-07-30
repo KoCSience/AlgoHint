@@ -15,6 +15,16 @@ def _write_executable(path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
+def _write_ssh_target(home: Path, target: str = "gpu-learning-host") -> None:
+    """Create the protected one-line SSH target consumed by public scripts."""
+
+    target_path = home / ".config" / "algohint" / "gemma-ssh-target"
+    target_path.parent.mkdir(parents=True)
+    target_path.parent.chmod(0o700)
+    target_path.write_text(f"{target}\n", encoding="ascii")
+    target_path.chmod(0o600)
+
+
 def _stack_fakes(tmp_path: Path) -> tuple[dict[str, str], Path]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -66,8 +76,10 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "run-local-stack.sh",
         SCRIPTS / "run-ssh-stack.sh",
         SCRIPTS / "bootstrap-gemma-server-remote.sh",
+        SCRIPTS / "check-gemma-ssh.sh",
         SCRIPTS / "install-gemma-server-ssh.sh",
         SCRIPTS / "sync-gemma-credentials-ssh.sh",
+        SCRIPTS / "lib" / "gemma-ssh-target.sh",
     ]
     result = subprocess.run(
         ["bash", "-n", *(str(path) for path in paths)],
@@ -221,6 +233,9 @@ def _ssh_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     fake_bin.mkdir()
     calls = tmp_path / "ssh-calls"
     runner = tmp_path / "ssh-algohint-runner"
+    local_home = tmp_path / "local-home"
+    local_home.mkdir()
+    _write_ssh_target(local_home)
     _write_executable(
         runner,
         """
@@ -250,17 +265,16 @@ fi
 """,
     )
     _write_executable(fake_bin / "curl", "printf '{\"status\":\"ok\",\"ready\":true}\\n'\n")
-    return (
-        {
+    environment = {
             **os.environ,
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "HOME": str(local_home),
             "FAKE_CALLS": str(calls),
             "ALGOHINT_RUN_ALGOHINT_SCRIPT": str(runner),
-            "ALGOHINT_SSH_TARGET": "gpu-learning-host",
             "ALGOHINT_SSH_STARTUP_TIMEOUT": "2",
-        },
-        calls,
-    )
+    }
+    environment.pop("ALGOHINT_SSH_TARGET", None)
+    return environment, calls
 
 
 def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None:

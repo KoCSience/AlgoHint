@@ -3,6 +3,10 @@ set -euo pipefail
 set +x
 umask 077
 
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=scripts/lib/gemma-ssh-target.sh
+. "$project_root/scripts/lib/gemma-ssh-target.sh"
+
 usage() {
     cat <<'EOF'
 Usage: sync-gemma-credentials-ssh.sh [--replace]
@@ -22,16 +26,12 @@ if [[ "$#" -ne 0 ]]; then
     exit 2
 fi
 
-ssh_target="${ALGOHINT_SSH_TARGET:-}"
-if [[ -z "$ssh_target" || "$ssh_target" == -* || "$ssh_target" == *$'\n'* ]]; then
-    echo "ALGOHINT_SSH_TARGET must be one SSH host or configured alias." >&2
-    exit 2
-fi
+ssh_target="$(algohint_read_gemma_ssh_target)"
+
 if ! command -v ssh >/dev/null 2>&1 || ! command -v base64 >/dev/null 2>&1; then
     echo "ssh and base64 are required to synchronize Gemma credentials." >&2
     exit 2
 fi
-
 credentials_dir="$HOME/.config/algohint"
 credentials_path="$credentials_dir/gemma-remote-credentials"
 garbage_dir="$credentials_dir/_GARBAGE"

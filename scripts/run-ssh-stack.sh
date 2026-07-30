@@ -5,7 +5,8 @@ umask 077
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 algohint_runner="${ALGOHINT_RUN_ALGOHINT_SCRIPT:-$project_root/scripts/run-algohint.sh}"
-ssh_target="${ALGOHINT_SSH_TARGET:-}"
+# shellcheck source=scripts/lib/gemma-ssh-target.sh
+. "$project_root/scripts/lib/gemma-ssh-target.sh"
 local_port="${ALGOHINT_SSH_LOCAL_PORT:-18000}"
 remote_port="${ALGOHINT_SSH_REMOTE_PORT:-18080}"
 startup_timeout="${ALGOHINT_SSH_STARTUP_TIMEOUT:-300}"
@@ -18,14 +19,8 @@ if [[ "${1:-}" == "--keep-remote" ]]; then
     keep_remote=true
     shift
 fi
-if [[ -z "$ssh_target" ]]; then
-    echo "ALGOHINT_SSH_TARGET is required (for example: gpu-learning-host)." >&2
-    exit 2
-fi
-if [[ "$ssh_target" == -* || "$ssh_target" == *$'\n'* ]]; then
-    echo "ALGOHINT_SSH_TARGET must be one SSH host or configured alias." >&2
-    exit 2
-fi
+ssh_target="$(algohint_read_gemma_ssh_target)"
+
 for port_name in local_port remote_port; do
     port_value="${!port_name}"
     if [[ ! "$port_value" =~ ^[1-9][0-9]*$ ]] || ((port_value > 65535)); then
@@ -45,7 +40,6 @@ if [[ ! -x "$algohint_runner" ]]; then
     echo "AlgoHint launcher is missing or not executable: $algohint_runner" >&2
     exit 2
 fi
-
 quote_remote() {
     local value="${1//\'/\'\\\'\'}"
     printf "'%s'" "$value"

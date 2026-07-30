@@ -11,12 +11,25 @@ LOCAL_INSTALLER = PROJECT_ROOT / "scripts" / "install-gemma-server-ssh.sh"
 REMOTE_BOOTSTRAP = PROJECT_ROOT / "scripts" / "bootstrap-gemma-server-remote.sh"
 MANIFEST = PROJECT_ROOT / "config" / "gemma-server-release.conf"
 GEMMA_GUIDE = PROJECT_ROOT / "docs" / "gemma-server.md"
+DEVELOPMENT_GUIDE = PROJECT_ROOT / "docs" / "development.md"
+E2E_GUIDE = PROJECT_ROOT / "docs" / "e2e-debugging.md"
+README = PROJECT_ROOT / "README.md"
 
 
 def write_executable(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"#!/usr/bin/env bash\nset -eu\n{body}", encoding="utf-8")
     path.chmod(0o755)
+
+
+def write_ssh_target(home: Path, target: str = "gpu-test-host") -> None:
+    """Create the protected one-line SSH target consumed by public scripts."""
+
+    target_path = home / ".config" / "algohint" / "gemma-ssh-target"
+    target_path.parent.mkdir(parents=True)
+    target_path.parent.chmod(0o700)
+    target_path.write_text(f"{target}\n", encoding="ascii")
+    target_path.chmod(0o600)
 
 
 def git(repository: Path, *arguments: str) -> str:
@@ -56,11 +69,31 @@ def test_algohint_contains_only_consumer_side_gemma_integration() -> None:
 
 def test_gemma_guide_uses_minimal_credential_sync_and_host_labels() -> None:
     guide = GEMMA_GUIDE.read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+    related_guides = "\n".join(
+        (
+            guide,
+            DEVELOPMENT_GUIDE.read_text(encoding="utf-8"),
+            E2E_GUIDE.read_text(encoding="utf-8"),
+            readme,
+        )
+    )
 
     assert "scripts/sync-gemma-credentials-ssh.sh" in guide
+    assert "scripts/check-gemma-ssh.sh" in guide
     assert "実行場所: AlgoHint host" in guide
     assert "実行場所: GPU host" in guide
     assert "SSH connection OK: AlgoHint host -> GPU host" in guide
+    assert "$HOME/.config/algohint/gemma-ssh-target" in readme
+    assert (
+        "${XDG_CONFIG_HOME:-$HOME/.config}/algohint-gemma-server/credentials"
+        in readme
+    )
+    assert "$HOME/.config/algohint/gemma-remote-credentials" in readme
+    assert "Gemma client credentials are already synchronized" in readme
+    assert "ALGOHINT_SSH_TARGET='" not in related_guides
+    assert 'export ALGOHINT_SSH_TARGET=' not in related_guides
+    assert 'ssh -T "$ALGOHINT_SSH_TARGET"' not in related_guides
     assert "scp " not in guide
 
 
@@ -70,6 +103,9 @@ def test_local_installer_sends_reviewed_bootstrap_and_pinned_values(
     fake_bin = tmp_path / "bin"
     ssh_log = tmp_path / "ssh.log"
     stdin_copy = tmp_path / "bootstrap.copy"
+    local_home = tmp_path / "local-home"
+    local_home.mkdir()
+    write_ssh_target(local_home)
     write_executable(
         fake_bin / "ssh",
         'printf "%s\\n" "$*" >> "$TEST_SSH_LOG"\n'
@@ -80,9 +116,10 @@ def test_local_installer_sends_reviewed_bootstrap_and_pinned_values(
         "fi\n",
     )
     environment = os.environ.copy()
+    environment.pop("ALGOHINT_SSH_TARGET", None)
     environment.update(
         {
-            "ALGOHINT_SSH_TARGET": "gpu-test-host",
+            "HOME": str(local_home),
             "PATH": f"{fake_bin}:{environment['PATH']}",
             "TEST_SSH_LOG": str(ssh_log),
             "TEST_STDIN_COPY": str(stdin_copy),
