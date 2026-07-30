@@ -206,6 +206,97 @@ def test_generate_quiz_uses_dedicated_endpoint_and_validates_json(
     assert len(quiz.questions) == 3
 
 
+@pytest.mark.parametrize("fence_label", ("json", "JSON", ""))
+def test_generate_review_accepts_one_transport_only_json_fence(
+    monkeypatch: pytest.MonkeyPatch,
+    fence_label: str,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    payload = json.dumps(
+        {
+            "algorithm_recap": "入力を読み、二値を加算します。",
+            "strengths": ["処理が簡潔です。"],
+            "improvements": [
+                {
+                    "category": "readability",
+                    "title": "命名",
+                    "feedback": "役割が伝わる名前を維持しましょう。",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"model": MODEL, "text": f"```{fence_label}\n{payload}\n```"},
+        )
+
+    provider, _ = provider_with_handler(handler)
+    review = provider.generate_review(make_review_request())
+
+    assert review.provider == "gemma"
+    assert review.improvements[0].category is CodeReviewCategory.READABILITY
+
+
+def test_generate_quiz_accepts_one_transport_only_json_fence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    payload = json.dumps(
+        {
+            "questions": [
+                {
+                    "focus": "edge_cases",
+                    "prompt": f"境界条件 {index}",
+                    "options": ["必要", "不要", "無関係"],
+                    "correct_option_index": 0,
+                    "explanation": "境界条件を確認するためです。",
+                }
+                for index in range(3)
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"model": MODEL, "text": f"```json\n{payload}\n```"},
+        )
+
+    provider, _ = provider_with_handler(handler)
+    quiz = provider.generate_quiz(make_quiz_request())
+
+    assert len(quiz.questions) == 3
+
+
+@pytest.mark.parametrize(
+    "wrapped_text",
+    (
+        "Here is the JSON:\n```json\n{}\n```",
+        "```json\n{}\n```\n```json\n{}\n```",
+        "```json\n{\"nested\": \"```\"}\n```",
+    ),
+)
+def test_generate_review_rejects_prose_or_multiple_fenced_documents(
+    monkeypatch: pytest.MonkeyPatch,
+    wrapped_text: str,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"model": MODEL, "text": wrapped_text})
+
+    provider, _ = provider_with_handler(handler)
+
+    with pytest.raises(HintProviderError) as error:
+        provider.generate_review(make_review_request())
+
+    assert error.value.reason_code is ProviderFailureReason.INVALID_STRUCTURED_RESPONSE
+
+
 def test_doctor_uses_only_model_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

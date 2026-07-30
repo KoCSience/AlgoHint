@@ -48,8 +48,9 @@ LLMへ渡してよい情報は、学習者へ既に公開されている問題�
 
 Gemmaはアプリと同じプロセスや標準Composeサービスへ組み込みません。12Bモデルの
 メモリ要件を、512MBに制限したWebアプリと分離する意図です。vLLMが利用できない
-ホストでは、FastAPIが構造化JSONを担当し、Transformersモデルはプレーンテキストの
-ヒントだけを生成する専用サーバーを使います。サーバー実装と設定の正本は
+ホストでは、用途別endpointと生成上限を持つ専用Transformersサーバーを使います。
+ヒントはプレーンテキスト、reviewとquizはJSON文字列として受け取り、AlgoHint側の
+共通schemaで検証します。サーバー実装と設定の正本は
 [AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)、
 AlgoHint側の認証、SSHトンネル、送信同意は
 [Gemma Server接続ガイド](gemma-server.md)を参照してください。
@@ -98,6 +99,9 @@ GeminiアダプタはAPIキー方式のDeveloper APIを明示的に選択しま�
 出力はアルゴリズム要約、最大3件の良い点、1〜5件の優先改善点です。改善点の分類は
 `correctness`、`edge_cases`、`complexity`、`readability`、`maintainability` に限定します。
 置換用ソース、コードブロック、完全解答、隠しテストへの言及を指示で禁止します。
+GemmaがJSON object全体を1つの`json` Markdown fenceで包んだ場合だけ、transport上の
+装飾として除去してから同じ厳密schemaを適用します。前後の説明文、複数document、
+入れ子のfenceは構造化出力不正として拒否します。
 さらに、提出コード中の12文字以上の行が応答へそのまま含まれる場合は、保存・表示せず
 安全な再試行案内にします。
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -38,6 +39,28 @@ from algohint.infrastructure.personalized_quiz_prompt import (
 )
 
 LOGGER = logging.getLogger(__name__)
+SINGLE_JSON_FENCE = re.compile(
+    r"\A```(?:json)?[ \t]*\r?\n(?P<body>.*?)\r?\n```[ \t]*\Z",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def _normalize_structured_json(text: str) -> str:
+    """Remove one transport-only JSON fence while preserving strict validation.
+
+    Gemma can wrap an otherwise valid JSON object in a Markdown fence despite
+    being instructed not to. Only one complete document is unwrapped; prose,
+    nested fences, and multiple documents remain invalid Pydantic input.
+    """
+
+    stripped = text.strip()
+    match = SINGLE_JSON_FENCE.fullmatch(stripped)
+    if match is None:
+        return stripped
+    body = match.group("body").strip()
+    if "```" in body:
+        return stripped
+    return body
 
 
 class _ResponseModel(BaseModel):
@@ -198,7 +221,7 @@ class TransformersHttpHintProvider:
             if response_payload.model != self._model:
                 raise ValueError("response model does not match configured model")
             payload = ProviderCodeReviewPayload.model_validate_json(
-                response_payload.text
+                _normalize_structured_json(response_payload.text)
             )
         except HintProviderError:
             raise
@@ -229,7 +252,7 @@ class TransformersHttpHintProvider:
             if response_payload.model != self._model:
                 raise ValueError("response model does not match configured model")
             payload = ProviderPersonalizedQuizPayload.model_validate_json(
-                response_payload.text
+                _normalize_structured_json(response_payload.text)
             )
             return payload.to_generated(
                 provider="gemma",
