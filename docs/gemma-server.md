@@ -49,6 +49,13 @@ movingな`main`を直接使わず、再起動時に重みや設定が無断で�
 レビューとAI小テストのJSONはAlgoHint本体でも共通スキーマと安全ポリシーを
 再検証してから表示・保存します。
 
+運用状態は`$ALGOHINT_GEMMA_STATUS_FILE`へ原子的に保存します。状態名は`starting`、
+`loading_processor`、`loading_model`、`ready`、`generating_hint`、
+`generating_review`、`generating_quiz`、`ready_with_last_error`、`stopping`、
+`stopped`、`failed`のいずれかです。更新日時、PID、モデルID、revision、安全な要求種別、
+経過時間、例外クラス以外は保存しません。プロンプト、コード、生成本文、認証値は状態JSONへ
+渡せないインターフェースにしています。
+
 ## ホーム配下の構造
 
 ```text
@@ -176,20 +183,44 @@ HF_HOME="$app_root/cache/huggingface" \
   --revision 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7
 ```
 
-## 起動
+## 起動・状態確認
 
-SSH切断後も維持するため、saekiユーザーのtmuxで起動します。サーバーは
-`127.0.0.1`だけで待ち受け、3枚のGPUへ自動分散します。
+SSH切断後も維持するため、制御スクリプトが`algohint-gemma` tmuxセッションを作ります。
+接続時の既定画面はmonitor windowで、上ペインが2秒ごとの状態・PID・healthz・GPU概要、
+下ペインが`server.log`の追従表示です。server windowにはUvicornの実プロセスと同じ
+コンソール出力が表示されます。サーバーが異常終了してもmonitor windowは残るため、
+最終状態とログを確認できます。
 
 ```bash
 app_root="$HOME/programs/algohint-gemma-server"
-tmux new-session -d -s algohint-gemma \
-  "$app_root/current/scripts/run-server.sh 2>&1 | tee -a '$app_root/state/server.log'"
-tmux ls
-tail -f "$app_root/state/server.log"
+"$app_root/current/scripts/server-control.sh" start
+"$app_root/current/scripts/server-control.sh" status
+"$app_root/current/scripts/server-control.sh" attach
 ```
 
-ログに`Application startup complete`が出た後、認証付きのモデル診断を行います。
+tmuxから離れるときは`Ctrl-b d`を使います。別端末から直近ログだけを見る場合と、
+追従する場合は次を使います。
+
+```bash
+"$app_root/current/scripts/server-control.sh" logs
+"$app_root/current/scripts/server-control.sh" logs --follow
+```
+
+`status`はtmuxセッション、検証済みUvicorn PID、状態JSON、`/healthz`を照合し、
+食い違いを警告します。`nvidia-smi`がない環境ではGPU欄だけを利用不可と表示し、
+monitor自体は継続します。
+
+ログは起動時に既定10 MiBを超えると5世代までローテーションします。必要なら秘密を
+含まない整数環境変数で変更できます。
+
+```bash
+export ALGOHINT_GEMMA_LOG_MAX_BYTES=20971520
+export ALGOHINT_GEMMA_LOG_GENERATIONS=8
+```
+
+processor読込、モデル重み読込、GPU配置、ready、要求開始・完了・失敗、shutdownは
+INFOログまたは状態JSONで確認できます。ログに`Application startup complete`が出た後、
+認証付きのモデル診断を行います。
 
 ```bash
 app_root="$HOME/programs/algohint-gemma-server"
@@ -265,23 +296,21 @@ ln -sfn "$app_root/releases/<新commit>" "$app_root/current"
 ```bash
 app_root="$HOME/programs/algohint-gemma-server"
 ln -sfn "$app_root/releases/<旧commit>" "$app_root/current"
-tmux send-keys -t algohint-gemma C-c
+"$app_root/current/scripts/server-control.sh" stop
+"$app_root/current/scripts/server-control.sh" start
 ```
 
-プロセス停止をログと`tmux ls`で確認してから、同じ起動コマンドを再実行します。
+プロセス停止を`status`で確認してから再起動します。
 
 ## 停止
 
 ```bash
-tmux send-keys -t algohint-gemma C-c
+app_root="$HOME/programs/algohint-gemma-server"
+"$app_root/current/scripts/server-control.sh" stop
 ```
 
-停止後もセッションだけが残った場合に限り、次を実行します。
-
-```bash
-tmux kill-session -t algohint-gemma
-```
-
+`stop`はPIDファイルの値が実際に対象Uvicornのコマンド行と一致する場合だけシグナルを送り、
+曖昧な`pkill`は使いません。その後、対象のtmuxセッションだけを終了します。
 WSL側のSSHトンネルは専用ターミナルで`Ctrl-C`を押して終了します。
 
 ## トラブルシューティング
@@ -291,8 +320,11 @@ WSL側のSSHトンネルは専用ターミナルで`Ctrl-C`を押して終了し
 | `uv`が見つからない | `$HOME/.local/bin/uv --version`を使い、PATH依存を避ける |
 | Hugging Faceで401/403 | モデル利用規約、トークン、saekiユーザーの権限を確認する |
 | CUDA out of memory | 他プロセス、3枚のGPU空き、14 GiB/GPU上限、offload領域を確認する |
-| 起動が長時間継続する | 初回ダウンロード量、`server.log`、GPUメモリ使用量を確認する |
-| AlgoHint doctorが接続拒否 | tmux、18080待受、SSHトンネル、18000競合を順に確認する |
+| 起動が長時間継続する | `server-control.sh attach`で読込状態、ログ、GPUメモリ使用量を確認する |
+| AlgoHint doctorが接続拒否 | `server-control.sh status`、18080待受、SSHトンネル、18000競合を順に確認する |
+| tmux接続時にサーバーが見えない | monitor windowを選び、上の状態と下の追従ログを確認する |
+| `ready_with_last_error` | `request_kind`と`exception_type`、直近ログを確認して同じボタンから再試行する |
+| `failed` | server windowの終了状態と最終ログを確認し、原因解消後にstop/startする |
 | 401 | WSLとサーバーのcredentialsが同じ世代か確認し、安全に再コピーする |
 | 429 | 単一生成ロックが使用中。現在要求の完了を待ち、重複送信しない |
 | RuleBasedへ退避する | UIの安全化理由、AlgoHintログ、サーバーログの順で確認する |

@@ -85,6 +85,11 @@
 - [ ] 利用者のホーム配下へTransformers版Gemmaサーバーを配置し、固定revisionを3枚のGPUでロードできる。
 - [ ] Gemmaサーバーがリモートの`127.0.0.1:18080`だけで待ち受け、未認証要求を拒否する。
 - [ ] Gemmaサーバーの認証付き`/v1/reviews`が構造化レビューを返し、入力コードや認証値をログへ出さない。
+- [ ] Gemmaの状態JSONがprocessor／model読込、ready、3種の生成中、直近失敗、停止を原子的に記録する。
+- [ ] 状態JSONとログに認証値、問題文、質問、コード、プロンプト、生成生データが含まれない。
+- [ ] `server-control.sh attach`で状態・GPU概要・追従ログが表示され、サーバー異常終了後もmonitorが残る。
+- [ ] `server-control.sh status`がtmux、検証済みPID、状態JSON、healthzの食い違いを警告する。
+- [ ] ログが設定上限で世代ローテーションし、`stop`が対象tmuxと検証済みPID以外を終了しない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
 - [ ] Chrome MCPからGemmaへ「わからない」を1回だけ要求し、provider/modelと生成ヒントが表示され、RuleBasedへ退避しない。
 - [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。

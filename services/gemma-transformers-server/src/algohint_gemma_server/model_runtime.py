@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
 
 from algohint_gemma_server.config import ServerConfig
+from algohint_gemma_server.status import RuntimeStatusReporter
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ModelNotReadyError(RuntimeError):
@@ -40,8 +44,13 @@ class HintRuntime(Protocol):
 class TransformersGemmaRuntime:
     """Load one Gemma model across visible GPUs and generate text-only hints."""
 
-    def __init__(self, config: ServerConfig) -> None:
+    def __init__(
+        self,
+        config: ServerConfig,
+        status_reporter: RuntimeStatusReporter | None = None,
+    ) -> None:
         self._config = config
+        self._status = status_reporter
         self._model: Any | None = None
         self._processor: Any | None = None
         self._torch: Any | None = None
@@ -62,9 +71,29 @@ class TransformersGemmaRuntime:
         if gpu_count <= 0 or not torch.cuda.is_available():
             raise RuntimeError("no CUDA device is available")
         dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        if self._status is not None:
+            self._status.update("loading_processor")
+        LOGGER.info(
+            "gemma_processor_loading model=%s revision=%s",
+            self._config.model_id,
+            self._config.model_revision,
+        )
         processor = AutoProcessor.from_pretrained(
             self._config.model_id,
             revision=self._config.model_revision,
+        )
+        LOGGER.info(
+            "gemma_processor_loaded model=%s revision=%s",
+            self._config.model_id,
+            self._config.model_revision,
+        )
+        if self._status is not None:
+            self._status.update("loading_model")
+        LOGGER.info(
+            "gemma_model_weights_loading model=%s revision=%s gpu_count=%d",
+            self._config.model_id,
+            self._config.model_revision,
+            gpu_count,
         )
         model = AutoModelForMultimodalLM.from_pretrained(
             self._config.model_id,
@@ -75,6 +104,15 @@ class TransformersGemmaRuntime:
             low_cpu_mem_usage=True,
         )
         model.eval()
+        device_map = getattr(model, "hf_device_map", {})
+        placement_count = len(device_map) if isinstance(device_map, dict) else 0
+        LOGGER.info(
+            "gemma_model_gpu_placement_complete model=%s gpu_count=%d "
+            "placement_entries=%d",
+            self._config.model_id,
+            gpu_count,
+            placement_count,
+        )
         self._torch = torch
         self._processor = processor
         self._model = model
