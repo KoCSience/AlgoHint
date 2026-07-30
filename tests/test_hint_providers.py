@@ -24,12 +24,16 @@ from algohint.domain.models import (
     HintGenerationRequest,
     PersonalizedQuizRequest,
 )
-from algohint.infrastructure.code_review_prompt import build_code_review_prompt
+from algohint.infrastructure.code_review_prompt import (
+    ProviderCodeReviewPayload,
+    build_code_review_prompt,
+)
 from algohint.infrastructure.gemma_hint_provider import GemmaHintProvider
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 from algohint.infrastructure.hint_prompt import build_hint_prompt
 from algohint.infrastructure.openai_hint_provider import OpenAIHintProvider
 from algohint.infrastructure.personalized_quiz_prompt import (
+    ProviderPersonalizedQuizPayload,
     build_personalized_quiz_prompt,
 )
 
@@ -235,21 +239,29 @@ def make_review_request() -> CodeReviewRequest:
 
 def test_code_review_prompt_contains_only_released_learning_context() -> None:
     prompt = build_code_review_prompt(make_review_request())
+    payload = json.loads(prompt)
 
     assert '"released_explanation"' in prompt
     assert '"source_code"' in prompt
     assert "hidden_tests" not in prompt
     assert "model_solution" not in prompt
     assert "correct_option_id" not in prompt
+    assert payload["response_contract"]["json_schema"] == (
+        ProviderCodeReviewPayload.model_json_schema()
+    )
 
 
 def test_personalized_quiz_prompt_excludes_private_judge_assets() -> None:
     prompt = build_personalized_quiz_prompt(make_quiz_request())
+    payload = json.loads(prompt)
 
     assert '"source_code":"print(0)"' in prompt
     assert "hidden_tests" not in prompt
     assert "model_solution" not in prompt
     assert "correct_option_id" not in prompt
+    assert payload["response_contract"]["json_schema"] == (
+        ProviderPersonalizedQuizPayload.model_json_schema()
+    )
 
 
 def test_openai_provider_uses_responses_without_tools_or_storage(

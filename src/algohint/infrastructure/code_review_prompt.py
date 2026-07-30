@@ -78,6 +78,9 @@ def build_code_review_prompt(request: CodeReviewRequest) -> str:
                 "count": "one to five prioritized items",
                 "categories": [category.value for category in CodeReviewCategory],
             },
+            # Keep plain-text transports aligned with the same strict structure
+            # used by providers that support an API-level response schema.
+            "json_schema": ProviderCodeReviewPayload.model_json_schema(),
         },
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))

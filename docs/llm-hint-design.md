@@ -102,6 +102,9 @@ GeminiアダプタはAPIキー方式のDeveloper APIを明示的に選択しま�
 GemmaがJSON object全体を1つの`json` Markdown fenceで包んだ場合だけ、transport上の
 装飾として除去してから同じ厳密schemaを適用します。前後の説明文、複数document、
 入れ子のfenceは構造化出力不正として拒否します。
+API自身がstructured outputを強制しないTransformers HTTP接続では、trusted-sideの
+Pydantic modelから生成したJSON Schemaもpromptへ含めます。field名と制約を手書きで
+二重管理せず、生成指示と受信後検証が同じschemaを参照するためです。
 さらに、提出コード中の12文字以上の行が応答へそのまま含まれる場合は、保存・表示せず
 安全な再試行案内にします。
 

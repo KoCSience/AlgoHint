@@ -112,6 +112,10 @@ def build_personalized_quiz_prompt(request: PersonalizedQuizRequest) -> str:
             "options_per_question": "three or four unique choices",
             "correct_option_index": "zero-based index into options",
             "language": "Japanese",
+            # Plain-text model transports cannot enforce a schema at the API layer.
+            # Derive it from the validation model so field names and constraints
+            # cannot drift independently from the trusted-side Pydantic contract.
+            "json_schema": ProviderPersonalizedQuizPayload.model_json_schema(),
         },
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
