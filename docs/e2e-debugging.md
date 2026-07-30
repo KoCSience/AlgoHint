@@ -164,12 +164,18 @@ Chrome DevTools MCPの導入と操作は
 ## 実Gemma Transformersサーバー
 
 vLLMが利用できない場合は、別LinuxホストのPyTorch／Transformers専用サーバーを使います。
-[Gemmaサーバー導入・運用ガイド](gemma-server.md)に従ってサーバーとSSHトンネルを
-起動し、Gemma用credentialsだけを読み込んだシェルで診断します。
+[Gemma Server接続・移行ガイド](gemma-server.md)に従い、SSHトンネルを作る前に
+version付きサーバーのcontrolが配置済みか確認します。
 
 ```bash
+target="${ALGOHINT_SSH_TARGET:?SSH設定名を指定してください}"
+ssh -T "$target" \
+  'test -x "$HOME/programs/algohint-gemma-server/current/scripts/server-control.sh"'
 uv run algohint doctor --provider gemma
 ```
+
+controlがなければ、実モデル検証へ進まず独立Gemma Serverの導入を完了します。
+Gemma用credentialsだけを読み込んだシェルでdoctorを実行し、値自体は表示しません。
 
 成功後、隔離ChromeでGemmaを選び、外部送信へ同意して「わからない」を1回だけ要求します。
 画面に`gemma / google/gemma-4-12B-it`と生成ヒントが表示され、RuleBasedへ退避しないことを

@@ -49,8 +49,10 @@ LLMへ渡してよい情報は、学習者へ既に公開されている問題�
 Gemmaはアプリと同じプロセスや標準Composeサービスへ組み込みません。12Bモデルの
 メモリ要件を、512MBに制限したWebアプリと分離する意図です。vLLMが利用できない
 ホストでは、FastAPIが構造化JSONを担当し、Transformersモデルはプレーンテキストの
-ヒントだけを生成する専用サーバーを使います。詳細は
-[Gemmaサーバー導入・運用ガイド](gemma-server.md)を参照してください。
+ヒントだけを生成する専用サーバーを使います。サーバー実装と設定の正本は
+[AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)、
+AlgoHint側の認証、SSHトンネル、送信同意は
+[Gemma Server接続・移行ガイド](gemma-server.md)を参照してください。
 
 ## ヒント生成フロー
 

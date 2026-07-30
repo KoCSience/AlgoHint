@@ -1,8 +1,15 @@
-# Gemma 4 12B Transformersサーバー
+# Gemma Server接続・移行ガイド
 
 AlgoHintからGemma 4 12Bを使うための、専用推論サーバーの導入・運用手順です。
 vLLM、TGI、Docker、root権限、公開ポートは必要ありません。任意のLinuxアカウントの
 ホーム配下へ、uv、PyTorch、Hugging Face Transformersで構築します。
+
+> [!IMPORTANT]
+> Gemma Serverのソース、Hydra設定、サーバーAPI、運用スクリプトの正本は
+> [KoCSience/AlgoHint-Gemma-Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)
+> へ移行中です。固定された開発版が公開されるまでは、進行中の未コミットcheckoutを
+> AlgoHintから自動配備しません。この文書の手動archive手順は既存モノレポ版を復旧する
+> ための暫定資料であり、新規導入では独立repoのversion付き手順を優先してください。
 
 AlgoHint本体とモデル推論を別プロセスにするのは、約12Bパラメータのモデル依存と
 GPU資源をUIから分離し、障害時にもRuleBasedヒントへ安全に退避できるようにするためです。
@@ -76,9 +83,26 @@ $HOME/
 `releases`と`current`を分けるのは、コード更新に失敗しても旧リリースへsymlinkを
 戻せるようにするためです。モデルキャッシュと仮想環境はリリース間で共有します。
 
-## 初回配置
+## 独立Gemma Serverの初回配置
+
+独立repoでは、設定統合、公開検査、AlgoHintが利用する3生成API、status、tmux制御を
+揃えたversionを配布単位にします。開発途中のbranchやdirtyなcheckoutは配備対象にしません。
+version付きの導入手順が公開された後は、独立repoのREADMEに従って
+`$HOME/programs/algohint-gemma-server/current`を作成し、次が成功することを確認します。
+
+```bash
+target="${ALGOHINT_SSH_TARGET:?SSH設定名を指定してください}"
+ssh -T "$target" \
+  'test -x "$HOME/programs/algohint-gemma-server/current/scripts/server-control.sh"'
+```
+
+この確認が失敗する間は`run-ssh-stack.sh`を実行しても自動インストールせず、期待パスを
+表示して終了します。固定version公開後、確認付きのclone／配備へ置き換える予定です。
+
+## 旧モノレポ版の初回配置（移行中のみ）
 
 WSL側のAlgoHintリポジトリで、現在コミットのサーバーだけをアーカイブします。
+この節は既存環境の構造確認・復旧に限定し、新規環境の正本にはしません。
 
 ```bash
 project_root="$(git rev-parse --show-toplevel)"
@@ -257,6 +281,8 @@ SSHトンネル、ローカルAlgoHintを順に起動します。
 project_root="$(git rev-parse --show-toplevel)"
 cd "$project_root"
 export ALGOHINT_SSH_TARGET='gpu-learning-host'
+ssh -T "$ALGOHINT_SSH_TARGET" \
+  'test -x "$HOME/programs/algohint-gemma-server/current/scripts/server-control.sh"'
 export ALGOHINT_SSH_LOCAL_PORT='18000'
 export ALGOHINT_SSH_REMOTE_PORT='18080'
 export ALGOHINT_SSH_STARTUP_TIMEOUT='300'
@@ -315,6 +341,8 @@ WSL側のSSHトンネルは専用ターミナルで`Ctrl-C`を押して終了し
 
 | 症状 | 確認と対処 |
 |---|---|
+| `server-control.sh`がない | 独立Gemma Serverが未配備、旧release、または移行中。エラーに表示された期待パスを確認し、独立repoのversion付き導入手順を完了する |
+| control確認のSSH自体が失敗する | `ssh -T '<SSH設定名>' 'true'`でalias、ユーザー、鍵、接続経路を先に直す |
 | `uv`が見つからない | `$HOME/.local/bin/uv --version`を使い、PATH依存を避ける |
 | Hugging Faceで401/403 | モデル利用規約、トークン、接続先ユーザーの権限を確認する |
 | CUDA out of memory | 他プロセス、3枚のGPU空き、14 GiB/GPU上限、offload領域を確認する |

@@ -24,6 +24,36 @@ AlgoHint Coach は、完成コードを先に示さず、段階的ヒントと�
 [アーキテクチャ](docs/architecture.md#状態の分類)、教材の小テスト形式は
 [教材作成ガイド](docs/data-and-content-authoring.md#復習小テスト)を参照してください。
 
+## 初回設定
+
+[uvの公式手順](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer)
+に従ってuvを導入し、リポジトリのロック済み依存を同期します。
+
+```bash
+uv --version
+uv sync --frozen
+./scripts/run-algohint.sh
+```
+
+<http://127.0.0.1:7860>を開いてください。LLMのキーがなくてもアプリは起動し、
+固定のRuleBasedヒントを利用できます。GPT-5.6、Gemini、Gemmaを使う場合だけ、
+[開発ガイドの秘密情報管理](docs/development.md#llm設定と秘密情報)に従って、必要な
+credentialsをホーム配下へ作成します。`.env`やリポジトリ内へキーを保存しないでください。
+
+別ホストのGemmaを使う場合は、AlgoHintより先に互換性のある
+[AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)を
+SSH接続先へ配備する必要があります。独立サーバーは公開準備中のため、固定された開発版が
+利用可能になるまでは、未コミットのcheckoutを起動スクリプトから自動配備しません。
+SSH設定名（例: `gpu-learning-host`）を自分の接続先へ置き換え、接続だけを先に確認します。
+
+```bash
+ssh -T 'gpu-learning-host' 'true'
+```
+
+必要なGPU、credentials、モデル、`server-control.sh`の配置順は
+[Gemma接続・移行ガイド](docs/gemma-server.md)を参照してください。controlが未配置なら
+`run-ssh-stack.sh`はサーバーやトンネルを開始せず、期待パスと復旧先を表示して停止します。
+
 ## Dockerで起動
 
 Docker Composeを使うと、学習ログ用ボリュームとローカル限定のポート公開を含めて起動できます。
@@ -60,15 +90,15 @@ docker compose down
 ```
 
 別ホストのGemma、SSHトンネル、ローカルAlgoHintをまとめて起動する場合は、SSH設定名を
-環境変数で渡します。終了後も新規起動したリモートGemmaを維持する場合は`--keep-remote`を
-付けます。
+環境変数で渡します。下記の`gpu-learning-host`は自分のSSH設定名へ置き換えてください。
+終了後も新規起動したリモートGemmaを維持する場合は`--keep-remote`を付けます。
 
 ```bash
 ALGOHINT_SSH_TARGET='gpu-learning-host' ./scripts/run-ssh-stack.sh
 ```
 
 vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
-構築する場合は、[Gemmaサーバー導入・運用ガイド](docs/gemma-server.md)を参照してください。
+接続する場合は、[Gemma Server接続・移行ガイド](docs/gemma-server.md)を参照してください。
 ホーム配下へ配置し、SSHトンネルで接続する構成を記載しています。
 
 Geminiの接続、キー、権限、モデル到達性だけを確認する場合は、学習者の問題文や
@@ -116,11 +146,3 @@ uv lock --check
 ブラウザ導入、実行コマンド、実Geminiを1要求だけ使う最終確認は
 [E2Eデバッグガイド](docs/e2e-debugging.md)、Codexへ隔離Chromeを接続する手順は
 [Chrome DevTools MCP導入ガイド](docs/chrome-devtools-mcp.md)を参照してください。
-
-### 環境構築について
-
-uvが入っていない場合はuvをインストール：[Installation | uv](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer)
-
-```shell
-uv sync
-```

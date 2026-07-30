@@ -91,6 +91,8 @@
 - [ ] `server-control.sh status`がtmux、検証済みPID、状態JSON、healthzの食い違いを警告する。
 - [ ] ログが設定上限で世代ローテーションし、`stop`が対象tmuxと検証済みPID以外を終了しない。
 - [ ] 3起動スクリプトが`bash -n`を通り、リポジトリ位置と`$HOME`から絶対パスを解決する。
+- [ ] SSH先の`server-control.sh`が未配置または実行不可なら、期待パスと独立Gemma Serverの導入先を表示して終了コード`2`を返し、Gemma、トンネル、AlgoHintを起動しない。
+- [ ] control確認のSSH通信失敗とcontrol未配置を別の診断として表示し、秘密値を出力しない。
 - [ ] local／SSH一括起動は自分が新規起動したGemmaだけを既定停止し、起動済みGemmaを停止しない。
 - [ ] `--keep-gemma`／`--keep-remote`、Ctrl+C、異常終了でも所有サービスとトンネルを仕様どおり処理する。
 - [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
