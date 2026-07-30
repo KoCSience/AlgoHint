@@ -67,6 +67,7 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "run-ssh-stack.sh",
         SCRIPTS / "bootstrap-gemma-server-remote.sh",
         SCRIPTS / "install-gemma-server-ssh.sh",
+        SCRIPTS / "sync-gemma-credentials-ssh.sh",
     ]
     result = subprocess.run(
         ["bash", "-n", *(str(path) for path in paths)],
