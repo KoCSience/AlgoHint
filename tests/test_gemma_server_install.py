@@ -10,6 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_INSTALLER = PROJECT_ROOT / "scripts" / "install-gemma-server-ssh.sh"
 REMOTE_BOOTSTRAP = PROJECT_ROOT / "scripts" / "bootstrap-gemma-server-remote.sh"
 MANIFEST = PROJECT_ROOT / "config" / "gemma-server-release.conf"
+GEMMA_GUIDE = PROJECT_ROOT / "docs" / "gemma-server.md"
 
 
 def write_executable(path: Path, body: str) -> None:
@@ -51,6 +52,16 @@ def test_algohint_contains_only_consumer_side_gemma_integration() -> None:
     assert not embedded_service.exists()
     assert "services/gemma-transformers-server" not in local_launcher
     assert "current/scripts/server-control.sh" in local_launcher
+
+
+def test_gemma_guide_uses_minimal_credential_sync_and_host_labels() -> None:
+    guide = GEMMA_GUIDE.read_text(encoding="utf-8")
+
+    assert "scripts/sync-gemma-credentials-ssh.sh" in guide
+    assert "実行場所: AlgoHint host" in guide
+    assert "実行場所: GPU host" in guide
+    assert "SSH connection OK: AlgoHint host -> GPU host" in guide
+    assert "scp " not in guide
 
 
 def test_local_installer_sends_reviewed_bootstrap_and_pinned_values(

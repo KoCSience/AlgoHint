@@ -48,7 +48,8 @@ public repositoryと40桁commit SHAは
 （例: `gpu-learning-host`）を自分の接続先へ置き換え、接続と初回配備を行います。
 
 ```bash
-ssh -T 'gpu-learning-host' 'true'
+ssh -T 'gpu-learning-host' \
+  'printf "SSH connection OK: AlgoHint host -> GPU host\n"'
 ALGOHINT_SSH_TARGET='gpu-learning-host' \
   ./scripts/install-gemma-server-ssh.sh
 ```
@@ -56,6 +57,13 @@ ALGOHINT_SSH_TARGET='gpu-learning-host' \
 必要なGPU、credentials、モデル、`server-control.sh`の配置順は
 [Gemma接続・移行ガイド](docs/gemma-server.md)を参照してください。controlが未配置なら
 `run-ssh-stack.sh`はサーバーやトンネルを開始せず、期待パスと復旧先を表示して停止します。
+接続後はremote credentials全体をコピーせず、次のhelperでGemma API keyだけを
+AlgoHint hostへ同期します。
+
+```bash
+ALGOHINT_SSH_TARGET='gpu-learning-host' \
+  ./scripts/sync-gemma-credentials-ssh.sh
+```
 
 ## Dockerで起動
 
@@ -98,7 +106,9 @@ Gemmaだけを停止し、継続する場合は`--keep-gemma`を付けます。
 終了後も新規起動したリモートGemmaを維持する場合は`--keep-remote`を付けます。
 
 ```bash
-ALGOHINT_SSH_TARGET='gpu-learning-host' ./scripts/run-ssh-stack.sh
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+ALGOHINT_SSH_TARGET='gpu-learning-host' \
+  ./scripts/run-ssh-stack.sh
 ```
 
 vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
