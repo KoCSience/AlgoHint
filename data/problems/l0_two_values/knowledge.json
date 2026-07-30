@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-07-30",
+  "problem_id": "l0_two_values",
+  "public_summary": "空白区切りで与えられる二つの整数を読み取り、数値として加算して一行に出力する問題。",
+  "concepts": ["input parsing", "integer conversion", "addition"],
+  "search_terms": ["Python input split map int", "Python integer conversion"],
+  "sources": [
+    {
+      "title": "Built-in Functions — input",
+      "url": "https://docs.python.org/3/library/functions.html#input",
+      "domain": "docs.python.org"
+    },
+    {
+      "title": "Built-in Types — Numeric Types",
+      "url": "https://docs.python.org/3/library/stdtypes.html#numeric-types-int-float-complex",
+      "domain": "docs.python.org"
+    }
+  ]
+}

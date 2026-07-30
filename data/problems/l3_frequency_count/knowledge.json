@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-07-30",
+  "problem_id": "l3_frequency_count",
+  "public_summary": "整数列の同じ値を持つ添字の組を、値ごとの出現回数を利用して効率よく数える問題。",
+  "concepts": ["frequency counting", "dictionary", "pair counting", "time complexity"],
+  "search_terms": ["Python dictionary frequency counting", "count equal pairs frequency"],
+  "sources": [
+    {
+      "title": "Python Tutorial — Dictionaries",
+      "url": "https://docs.python.org/3/tutorial/datastructures.html#dictionaries",
+      "domain": "docs.python.org"
+    },
+    {
+      "title": "collections — Counter objects",
+      "url": "https://docs.python.org/3/library/collections.html#collections.Counter",
+      "domain": "docs.python.org"
+    }
+  ]
+}

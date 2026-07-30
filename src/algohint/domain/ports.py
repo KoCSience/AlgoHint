@@ -18,6 +18,7 @@ from algohint.domain.models import (
     PersonalizedQuizRequest,
     PersonalizedQuizSet,
     Problem,
+    ProblemKnowledge,
     Profile,
     ProfilePreferences,
     ProviderAvailability,
@@ -25,6 +26,11 @@ from algohint.domain.models import (
     ReviewHistoryRecord,
     ReviewMaterial,
     ReviewQuotaStatus,
+    ResearchHistoryEntry,
+    ResearchEvaluationCase,
+    ResearchProviderRequest,
+    ResearchResult,
+    ResearchUsage,
     TestCase,
     TutorMessage,
     TutorSession,
@@ -45,6 +51,12 @@ class ProblemRepository(Protocol):
     def get_curriculum(self) -> list[dict[str, object]]: ...
 
     def get_review_material(self, problem_id: str) -> ReviewMaterial: ...
+
+
+class KnowledgeBaseRepository(Protocol):
+    """Read reviewed public context independently from private judge assets."""
+
+    def get_knowledge(self, problem_id: str) -> ProblemKnowledge: ...
 
 
 class LearningLogRepository(Protocol):
@@ -159,6 +171,40 @@ class PersonalizedQuizProvider(Protocol):
         self,
         request: PersonalizedQuizRequest,
     ) -> GeneratedPersonalizedQuiz: ...
+
+
+class ResearchProvider(Protocol):
+    """Call the private grounded-research boundary without Exa credentials."""
+
+    def usage(self) -> ResearchUsage: ...
+
+    def research(self, request: ResearchProviderRequest) -> ResearchResult: ...
+
+
+class ResearchHistoryRepository(Protocol):
+    """Persist bounded grounded responses per local profile."""
+
+    def save(
+        self,
+        profile_id: str,
+        problem_id: str,
+        judge_status: str,
+        result: ResearchResult,
+    ) -> ResearchHistoryEntry: ...
+
+    def list(
+        self,
+        profile_id: str,
+        problem_id: str,
+        *,
+        limit: int = 10,
+    ) -> tuple[ResearchHistoryEntry, ...]: ...
+
+
+class ResearchEvaluationCaseRepository(Protocol):
+    """Load the fixed, versioned research quality dataset."""
+
+    def list_cases(self) -> tuple[ResearchEvaluationCase, ...]: ...
 
 
 class LearningProvider(

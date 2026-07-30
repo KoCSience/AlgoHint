@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-07-30",
+  "problem_id": "l1_value_class",
+  "public_summary": "整数の温度を、0未満、0以上30以下、31以上という相互に重ならない三つの範囲へ分類する問題。",
+  "concepts": ["conditional statements", "comparison operators", "boundary cases"],
+  "search_terms": ["Python if elif else comparison", "Python chained comparisons"],
+  "sources": [
+    {
+      "title": "Python Tutorial — if Statements",
+      "url": "https://docs.python.org/3/tutorial/controlflow.html#if-statements",
+      "domain": "docs.python.org"
+    },
+    {
+      "title": "Python Reference — Comparisons",
+      "url": "https://docs.python.org/3/reference/expressions.html#comparisons",
+      "domain": "docs.python.org"
+    }
+  ]
+}

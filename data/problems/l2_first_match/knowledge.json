@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-07-30",
+  "problem_id": "l2_first_match",
+  "public_summary": "整数列を先頭から調べ、指定値と初めて一致する要素の1始まり位置を返し、存在しない場合は-1を返す線形探索問題。",
+  "concepts": ["linear search", "enumerate", "early return", "one-based index"],
+  "search_terms": ["Python enumerate linear search", "Python list first matching index"],
+  "sources": [
+    {
+      "title": "Built-in Functions — enumerate",
+      "url": "https://docs.python.org/3/library/functions.html#enumerate",
+      "domain": "docs.python.org"
+    },
+    {
+      "title": "Python Tutorial — Looping Techniques",
+      "url": "https://docs.python.org/3/tutorial/datastructures.html#looping-techniques",
+      "domain": "docs.python.org"
+    }
+  ]
+}

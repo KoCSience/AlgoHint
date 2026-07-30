@@ -40,3 +40,15 @@ class DataPaths:
         """Use one bounded SQLite database per profile for detailed review history."""
 
         return self.runtime_dir / "review_history"
+
+    @property
+    def research_history_dir(self) -> Path:
+        """Keep grounded-search history private and separate from authored content."""
+
+        return self.runtime_dir / "research_history"
+
+    @property
+    def research_evaluation_file(self) -> Path:
+        """Return the versioned fixed-case dataset used by offline evaluation."""
+
+        return self.data_dir / "evaluation" / "research-cases.json"

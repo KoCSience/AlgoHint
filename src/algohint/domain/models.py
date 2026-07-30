@@ -4,10 +4,11 @@ Pydantic validation is used at the filesystem boundary so malformed teaching
 content cannot silently reach the judge or learner UI.
 """
 
-from datetime import datetime
-from typing import Annotated
+from datetime import date, datetime
+from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from algohint.domain.enums import (
     CodeReviewCategory,
@@ -454,6 +455,146 @@ class GeneratedPersonalizedQuiz(FrozenModel):
         prompts = [question.prompt.strip() for question in self.questions]
         if len(prompts) != len(set(prompts)):
             raise ValueError("Generated personalized quiz prompts must be unique")
+
+
+class KnowledgeSource(FrozenModel):
+    """One human-reviewed public source allowed for a problem's research."""
+
+    title: str = Field(min_length=1, max_length=300)
+    url: str = Field(pattern=r"^https://", max_length=2_048)
+    domain: str = Field(
+        pattern=r"^[a-z0-9.-]+$",
+        min_length=1,
+        max_length=253,
+    )
+
+    @model_validator(mode="after")
+    def validate_url_domain(self) -> Self:
+        """Require HTTPS and bind the reviewed domain to the parsed URL host."""
+
+        parsed = urlsplit(self.url)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        domain = self.domain.lower().rstrip(".")
+        if parsed.scheme != "https" or not (
+            host == domain or host.endswith("." + domain)
+        ):
+            raise ValueError("Knowledge source domain does not match its HTTPS URL")
+        return self
+
+
+class ProblemKnowledge(FrozenModel):
+    """Versioned public knowledge used for static fallback and search planning."""
+
+    version: int = Field(ge=1)
+    reviewed_at: date
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    public_summary: str = Field(min_length=1, max_length=2_000)
+    concepts: tuple[str, ...] = Field(min_length=1, max_length=8)
+    search_terms: tuple[str, ...] = Field(min_length=1, max_length=10)
+    sources: tuple[KnowledgeSource, ...] = Field(min_length=1, max_length=8)
+
+
+ResearchUsageState = Literal[
+    "available",
+    "warning",
+    "hard_stopped",
+    "unconfigured",
+    "stale_pricing",
+]
+
+
+class ResearchUsage(FrozenModel):
+    """Validated free-tier status returned by the private Gemma Server."""
+
+    available: bool
+    state: ResearchUsageState
+    reason: str | None = Field(default=None, max_length=200)
+    calendar_month: str = Field(pattern=r"^[0-9]{4}-[0-9]{2}$")
+    monthly_budget_usd: str = Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")
+    warning_budget_usd: str = Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")
+    calendar_month_cost_usd: str = Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")
+    rolling_30_day_cost_usd: str = Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")
+    calendar_month_searches: int = Field(ge=0)
+    rolling_30_day_searches: int = Field(ge=0)
+    today_searches: int = Field(ge=0)
+    calendar_month_content_pages: int = Field(ge=0)
+    remaining_searches: int = Field(ge=0)
+    pricing_reviewed_at: str = Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    pricing_valid_until: str = Field(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+
+
+class ResearchProviderRequest(FrozenModel):
+    """Public-only request; no source, question, profile or hidden test can fit."""
+
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    problem_title: str = Field(min_length=1, max_length=200)
+    problem_summary: str = Field(min_length=1, max_length=2_000)
+    language: Literal["Python"] = "Python"
+    concepts: tuple[str, ...] = Field(min_length=1, max_length=8)
+    search_terms: tuple[str, ...] = Field(min_length=1, max_length=10)
+    allowed_domains: tuple[str, ...] = Field(min_length=1, max_length=8)
+    judge_status: Literal["WA", "RE", "TLE", "CE", "AC", "GIVE_UP", "UNKNOWN"]
+    hint_level: int = Field(ge=1, le=3)
+    web_search_consent: Literal[True]
+    client_request_id: str = Field(
+        min_length=8,
+        max_length=100,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+    )
+
+
+class ResearchCitation(FrozenModel):
+    """One source supporting a grounded research hint."""
+
+    citation_id: str = Field(pattern=r"^S[1-9][0-9]*$")
+    title: str = Field(min_length=1, max_length=500)
+    url: str = Field(pattern=r"^https://", max_length=2_048)
+    domain: str = Field(min_length=1, max_length=253)
+
+    @model_validator(mode="after")
+    def validate_url_domain(self) -> Self:
+        """Reject provider citations whose declared domain differs from the URL."""
+
+        host = (urlsplit(self.url).hostname or "").lower().rstrip(".")
+        if host != self.domain.lower().rstrip("."):
+            raise ValueError("Research citation domain does not match its URL")
+        return self
+
+
+class ResearchResult(FrozenModel):
+    """Grounded hint returned to the application after provider validation."""
+
+    model: str = Field(min_length=1, max_length=200)
+    run_id: str = Field(min_length=16, max_length=64)
+    text: str = Field(min_length=1, max_length=4_000)
+    citations: tuple[ResearchCitation, ...] = Field(max_length=2)
+    trace: tuple[str, ...] = Field(min_length=1, max_length=20)
+    search_requests: int = Field(ge=0, le=3)
+    content_pages: int = Field(ge=0, le=12)
+    cache_hits: int = Field(ge=0, le=6)
+    elapsed_ms: int = Field(ge=0)
+    fallback: bool
+    usage: ResearchUsage
+
+
+class ResearchHistoryEntry(FrozenModel):
+    """Profile-scoped snapshot without raw Exa highlights or learner code."""
+
+    entry_id: int = Field(gt=0)
+    profile_id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    created_at: datetime
+    judge_status: str
+    result: ResearchResult
+
+
+class ResearchEvaluationCase(FrozenModel):
+    """One fixed offline quality case; it contains no learner-specific data."""
+
+    case_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    judge_status: Literal["WA", "TLE", "AC"]
+    expected_focus: str = Field(min_length=1, max_length=200)
 
 
 class CodeReviewEntry(FrozenModel):
