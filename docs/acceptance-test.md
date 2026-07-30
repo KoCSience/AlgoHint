@@ -97,8 +97,12 @@
 - [ ] control確認のSSH通信失敗とcontrol未配置を別の診断として表示し、秘密値を出力しない。
 - [ ] local／SSH一括起動は自分が新規起動したGemmaだけを既定停止し、起動済みGemmaを停止しない。
 - [ ] `--keep-gemma`／`--keep-remote`、Ctrl+C、異常終了でも所有サービスとトンネルを仕様どおり処理する。
+- [ ] managed launcherがcredentials読込後にloopback endpointを再適用し、古い接続設定へlearner dataを送らない。
+- [ ] health成功後に認証付きdoctorが成功した場合だけAlgoHintを起動し、失敗時は所有processをcleanupする。
+- [ ] 起動後にhealthを3回連続で取得できない場合、remote serviceを自動再起動せず、UIとRuleBased fallbackを維持して警告を1回表示する。
 - [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
+- [ ] listener不在の`ConnectError`が`endpoint_unreachable`となり、502/503の`provider_unavailable`、timeout、401と区別される。
 - [ ] Chrome MCPからGemmaへ「わからない」を1回だけ要求し、provider/modelと生成ヒントが表示され、RuleBasedへ退避しない。
 - [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。
 - [ ] 実Geminiのヒントとprovider/modelが画面に表示され、RuleBasedフォールバックがない。

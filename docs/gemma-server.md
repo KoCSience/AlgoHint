@@ -299,8 +299,25 @@ scriptは次の順で実行します。
 2. 既存serverがなければstartする。
 3. `127.0.0.1:18000`からremote `127.0.0.1:18080`へtunnelを作る。
 4. healthがreadyになるまでbounded waitする。
-5. `transformers_http`、`remote`を明示してAlgoHintを起動する。
-6. 終了時に自分が作ったtunnelとserverだけを停止する。
+5. credentials読込後も接続先を上のloopback tunnelへ固定する。
+6. 認証付き`/v1/models`でmodel IDとreadyを検査する。
+7. doctor成功後だけAlgoHintを起動し、5秒間隔でhealthを監視する。
+8. 終了時に自分が作ったtunnelとserverだけを停止する。
+
+```text
+remote controller
+  → SSH tunnel
+  → /healthz
+  → managed endpoint固定
+  → doctor (/v1/models)
+  → AlgoHint + health monitor
+```
+
+monitorは3回連続でhealthを取得できなかった場合に端末へ1回だけ警告します。remote
+serverを自動再起動したり生成POSTを自動再送したりはしません。起動前から存在したserverの
+所有権を奪うことと、応答だけ失われた生成処理を重複実行することを避けるためです。
+AlgoHint自体は停止せず、Gemma要求は安全にRuleBasedヒントへfallbackします。監視間隔は
+`ALGOHINT_GEMMA_MONITOR_INTERVAL_SECONDS`で1〜60秒に変更でき、既定は5秒です。
 
 remote Gemmaを維持する場合は`--keep-remote`を指定します。
 
@@ -330,6 +347,49 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 doctorはprompt、問題文、codeを送らず、`/v1/models`でbackend、model ID、readyを
 確認します。成功時は
 `Gemma診断: OK provider=gemma model=google/gemma-4-12B-it`と表示されます。
+明示的にdoctorを指定した場合、launcher内の起動前doctorは重複実行されません。
+
+## Connection refusedの切り分け
+
+次の組み合わせは、HTTP statusを受け取る前に接続先listenerへ到達できなかったことを
+示します。API key不一致、model ID不一致、生成レスポンス検証とは別の障害です。
+
+```text
+reason_code=endpoint_unreachable
+http_status=-
+exception_type=ConnectError
+```
+
+まずAlgoHint hostで、秘密値を表示せずlistenerと設定fileの属性だけを確認します。
+
+```bash
+ss -ltn | grep -E ':(18000|18080)[[:space:]]'
+stat -c 'owner_uid=%u mode=%a type=%F path=%n' \
+  "$HOME/.config/algohint/gemma-ssh-target" \
+  "$HOME/.config/algohint/gemma-remote-credentials"
+```
+
+Remote構成ではAlgoHint hostの`127.0.0.1:18000`がSSH tunnel、GPU hostの
+`127.0.0.1:18080`がGemma Serverです。AlgoHint hostに18000のlistenerがなければ、
+単独の`run-algohint.sh`ではなく次の順に復旧します。
+
+```bash
+./scripts/check-gemma-ssh.sh
+./scripts/install-gemma-server-ssh.sh
+./scripts/sync-gemma-credentials-ssh.sh
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-stack.sh --keep-remote doctor --provider gemma
+```
+
+installerは固定releaseに対して冪等です。doctor成功後は同じcredentialsで
+`./scripts/run-ssh-stack.sh`を起動します。doctorより前に失敗した場合は、GPU hostで
+`server-control.sh status`と`logs`を確認します。credentialsやログ全体を表示せず、
+controllerが示すclosed metadataからmodel load、GPU、portの失敗を切り分けてください。
+
+Local構成では`$HOME/programs/algohint-gemma-server/current/scripts/server-control.sh`が
+存在するhostで`run-local-stack.sh doctor --provider gemma`を使用します。Dockerから
+hostのGemmaへ接続する場合、container内の`127.0.0.1`はhostを指さないため、
+[Docker運用ガイド](docker.md)の接続先設定を使用してください。
 
 ## Error map
 
@@ -344,7 +404,10 @@ doctorはprompt、問題文、codeを送らず、`/v1/models`でbackend、model 
 | `loading_model`が継続                                             | cache、disk I/O、VRAM、safe log metadataを確認                     |
 | `401`                                                             | keyを表示せず同期helperの`--replace`とdoctorを順に実行              |
 | `429`                                                             | 別生成中。clientのbounded retryを待つ                              |
+| `endpoint_unreachable` / `Connection refused`                     | server／tunnelのlistener不在。上の専用手順で起動経路を再構築       |
 | tunnel起動失敗                                                    | local 18000競合、SSH forwarding設定、remote 18080を確認            |
+| 起動前doctor失敗                                                  | UIは未起動。reason codeに従い認証、model ID、ready、接続経路を修正 |
+| 起動後のhealth喪失警告                                            | UIは継続中。stackを再起動してdoctor成功後にGemmaを再試行           |
 | `gemma-ssh-target`検証失敗                                        | 通常file、現在ユーザー所有、mode 600、alias 1行だけか確認          |
 | `ALGOHINT_SSH_TARGET is no longer supported`                      | 変数を`unset`し、`~/.config/algohint/gemma-ssh-target`へ移行       |
 | 旧接続確認の`printf ...: command not found`                       | remote成功表示の解釈失敗。`check-gemma-ssh.sh`で再確認             |

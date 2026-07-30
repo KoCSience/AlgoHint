@@ -252,11 +252,13 @@ FastAPIサーバーを利用できます。利用者のホーム配下への配�
 固定revisionのモデル取得、SSHトンネル、起動・停止・ロールバックは
 [Gemma Server接続ガイド](gemma-server.md)を参照してください。
 
-SSHトンネルとGemmaサーバーを起動し、Gemma用credentialsを読み込んだ同じシェルで
-次を実行します。
+SSHトンネルとGemmaサーバーを個別起動して直接doctorを実行することもできますが、通常は
+server、tunnel、health、認証付きmodel discoveryを同じ接続先で検証するmanaged
+launcherを使用します。
 
 ```bash
-uv run algohint doctor --provider gemma
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-stack.sh --keep-remote doctor --provider gemma
 ```
 
 同一ホストでは`./scripts/run-local-stack.sh`、別ホストでは
@@ -264,6 +266,8 @@ uv run algohint doctor --provider gemma
 `./scripts/run-ssh-stack.sh`を使うと、Gemma、トンネル、AlgoHintを順に起動できます。
 設定fileの作成と検証は[Gemma Server接続ガイド](gemma-server.md#1-ssh接続の確認)を
 参照してください。各スクリプトは自分が新規起動したGemmaだけを終了時に停止します。
+managed launcherはcredentials読込後も検証済みloopback接続先を再適用するため、
+credentials fileに残った古いbackend、deployment、base URLで接続先が変わりません。
 
 doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
 成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を
@@ -278,12 +282,18 @@ SSHトンネルのURLが`127.0.0.1`でもUIで外部送信同意を要求しま�
 | Gemma接続先           | `ALGOHINT_GEMMA_BASE_URL`                     | 通常はいいえ       |
 | Gemma実装方式         | `ALGOHINT_GEMMA_BACKEND`                      | いいえ             |
 | Gemma配置場所         | `ALGOHINT_GEMMA_DEPLOYMENT`                   | いいえ             |
+| Gemma health監視間隔  | `ALGOHINT_GEMMA_MONITOR_INTERVAL_SECONDS`     | いいえ             |
 | 起動時のモデル選択    | `ALGOHINT_LLM_PROVIDER=openai\|gemma\|gemini` | いいえ             |
 | 開発プロフィール      | `ALGOHINT_ENV=development`                    | いいえ             |
 
 既定モデルは `ALGOHINT_OPENAI_MODEL`、`ALGOHINT_GEMINI_MODEL`、
 `ALGOHINT_GEMMA_MODEL` で上書きできます。モデル選択はプロフィールへ保存されますが、
 キーとクラウド送信への同意は保存されません。
+
+`endpoint_unreachable`はHTTP応答前の接続失敗を表します。`provider_unavailable`は
+ready=false、HTTP 502/503、または接続後のtransport障害に使用します。この区別により、
+前者はserver/tunnelの起動確認、後者はserver状態確認や一時待機へ誘導します。生成POSTは
+自動再送せず、失敗した操作だけをRuleBasedへfallbackします。
 
 ### この形式の理由
 

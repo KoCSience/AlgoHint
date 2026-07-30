@@ -44,6 +44,8 @@ uv sync --frozen
 固定のRuleBasedヒントを利用できます。GPT-5.6、Gemini、Gemmaを使う場合だけ、
 [開発ガイドの秘密情報管理](docs/development.md#llm設定と秘密情報)に従って、必要な
 credentialsをホーム配下へ作成します。`.env`やリポジトリ内へキーを保存しないでください。
+別ホストのGemmaを使う場合は、この単独launcherではなく、serverとSSH tunnelを検証する
+`run-ssh-stack.sh`から起動してください。
 
 別ホストのGemmaを使う場合は、AlgoHintより先に互換性のある
 [AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)を
@@ -151,9 +153,25 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-stack.sh
 ```
 
+このlauncherはhealth確認後に認証付きdoctorを実行し、model IDとready状態が一致した場合
+だけAlgoHintを起動します。起動後にserverまたはtunnelのhealthが失われても、アプリは
+RuleBasedヒントを利用できる状態で継続し、端末へ復旧案内を1回表示します。
+
 vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
 接続する場合は、[Gemma Server接続ガイド](docs/gemma-server.md)を参照してください。
 ホーム配下へ配置し、SSHトンネルで接続する構成を記載しています。
+
+Gemma接続だけを確認する場合:
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-stack.sh --keep-remote doctor --provider gemma
+```
+
+`reason_code=endpoint_unreachable`または`ConnectError: [Errno 111] Connection refused`
+の場合は、認証やモデル応答より前にserverまたはtunnelのlistenerへ到達できていません。
+[Connection refusedの切り分け](docs/gemma-server.md#connection-refusedの切り分け)を
+参照してください。
 
 Geminiの接続、キー、権限、モデル到達性だけを確認する場合は、学習者の問題文や
 コードを送らない診断コマンドを使用できます。
