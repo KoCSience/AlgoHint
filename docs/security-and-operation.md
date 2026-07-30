@@ -11,6 +11,11 @@ source code、質問、profile、履歴、隠しtestを型から除外します�
 Highlightsとcredentialを含みません。詳細は
 [Grounded Web Researchと評価](research-and-evaluation.md)を参照してください。
 
+固定ケースのライブ評価も同じ公開情報contractとServer予算台帳を使用します。
+`expected_focus`は評価oracleとしてclient側に留め、検索・生成requestへ含めません。
+ライブ実行には`--run-live --confirm-live-search-cost`の両方が必要で、結果DBには
+query、highlight、API keyを保存しません。
+
 LocalJudgeは `shell=False`、一時ディレクトリ、`python -I`、タイムアウト、出力上限、POSIX環境でのCPU・メモリ上限を用います。これは学習時の事故を減らすための対策であり、悪意あるコードを完全に隔離するサンドボックスではありません。
 
 Docker構成では、非rootユーザー、読み取り専用ルートファイルシステム、capability削除、権限昇格防止、PID・CPU・メモリ・一時領域の上限を追加します。ポートは`127.0.0.1`だけへ公開し、永続書き込み先を学習ログ用ボリュームに限定します。これらはホストへの影響と偶発的な資源枯渇を軽減する多層防御です。

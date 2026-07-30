@@ -41,6 +41,7 @@ Exa Grounded Researchは`ResearchProvider`からprivate Gemma Serverへ委譲し
 | Tutor履歴 | `tutor_sessions/` | 完結した質問・回答の組 | 会話文脈の復元 |
 | 復習履歴 | `review_history/<profile>.sqlite3` | 小テスト結果、AI問題、生成済みレビュー | 復習の再表示 |
 | Research履歴 | `research_history/<profile>.sqlite3` | 引用、trace、費用状態、最終ヒント | 根拠と実測評価 |
+| 固定Research実測 | `research_evaluation/runs.sqlite3` | 公開固定caseの最終応答と実行指標 | case別最新版の比較 |
 | 固定小テスト解除 | 同SQLiteの`review_unlocks` | 固定5問を一度採点した事実 | 解説・AIレビューの公開 |
 
 ### `last_problem_id` が「利便性の状態」である理由

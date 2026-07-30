@@ -216,12 +216,9 @@ class CodeReviewHistoryPage:
 
 
 @dataclass(frozen=True)
-class ResearchEvaluationReport:
-    """Explainable quality metrics from fixed cases and persisted real runs."""
+class ResearchRunMetrics:
+    """Comparable quality measures for one bounded set of Research runs."""
 
-    fixed_case_count: int
-    covered_problem_count: int
-    knowledge_source_count: int
     recorded_run_count: int
     grounded_completion_rate: float
     citation_integrity_rate: float
@@ -231,3 +228,16 @@ class ResearchEvaluationReport:
     average_search_requests: float
     average_latency_ms: float
     cache_hit_rate: float
+
+
+@dataclass(frozen=True)
+class ResearchEvaluationReport:
+    """Separate fixed benchmark evidence from optional learner-run evidence."""
+
+    fixed_case_count: int
+    covered_problem_count: int
+    knowledge_source_count: int
+    fixed_recorded_case_count: int
+    fixed_case_coverage_rate: float
+    fixed_runs: ResearchRunMetrics
+    profile_runs: ResearchRunMetrics

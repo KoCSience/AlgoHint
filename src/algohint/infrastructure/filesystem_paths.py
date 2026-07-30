@@ -52,3 +52,9 @@ class DataPaths:
         """Return the versioned fixed-case dataset used by offline evaluation."""
 
         return self.data_dir / "evaluation" / "research-cases.json"
+
+    @property
+    def research_evaluation_runs_file(self) -> Path:
+        """Keep live benchmark evidence outside versioned teaching content."""
+
+        return self.runtime_dir / "research_evaluation" / "runs.sqlite3"

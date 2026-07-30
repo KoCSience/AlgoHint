@@ -57,6 +57,10 @@ ALGOHINT_RUN_BROWSER_E2E=1 uv run pytest -q tests/test_browser_e2e.py
 uv run algohint --data-dir data evaluate --json
 ```
 
+自動テストはライブ評価providerを注入し、確認flag、未測定ケースの選択、再実行、専用DB、
+入れ子の実測指標を外部通信なしで検証します。実Exa確認はBillingとServer preflightの
+確認後に1ケースだけ実施し、CIでは実行しません。
+
 WSL 2でChrome MCPを利用する場合は、`node`だけでなく`npm`と`npx`もLinux版へ
 統一します。Windows PATHとの混在、mise Node 24、Chrome for Testing、Codex設定は
 [Chrome DevTools MCP導入ガイド](chrome-devtools-mcp.md#wsl-2のnode環境)を参照してください。

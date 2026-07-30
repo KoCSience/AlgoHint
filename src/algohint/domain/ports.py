@@ -28,6 +28,7 @@ from algohint.domain.models import (
     ReviewQuotaStatus,
     ResearchHistoryEntry,
     ResearchEvaluationCase,
+    ResearchEvaluationRun,
     ResearchProviderRequest,
     ResearchResult,
     ResearchUsage,
@@ -205,6 +206,18 @@ class ResearchEvaluationCaseRepository(Protocol):
     """Load the fixed, versioned research quality dataset."""
 
     def list_cases(self) -> tuple[ResearchEvaluationCase, ...]: ...
+
+
+class ResearchEvaluationRunRepository(Protocol):
+    """Persist live fixed-case evidence separately from learner histories."""
+
+    def save(
+        self,
+        case: ResearchEvaluationCase,
+        result: ResearchResult,
+    ) -> ResearchEvaluationRun: ...
+
+    def list_latest(self) -> tuple[ResearchEvaluationRun, ...]: ...
 
 
 class LearningProvider(

@@ -2,6 +2,7 @@
 
 import argparse
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -13,7 +14,10 @@ from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
 from algohint.application.research_service import GroundedResearchService
-from algohint.application.research_evaluation_service import ResearchEvaluationService
+from algohint.application.research_evaluation_service import (
+    LiveResearchEvaluationUnavailableError,
+    ResearchEvaluationService,
+)
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
 from algohint.domain.enums import GemmaBackend, HintProviderId
@@ -33,7 +37,10 @@ from algohint.infrastructure.json_tutor_session_repository import (
     JsonTutorSessionRepository,
 )
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
-from algohint.infrastructure.gemma_research_provider import GemmaResearchProvider
+from algohint.infrastructure.gemma_research_provider import (
+    GemmaResearchProvider,
+    ResearchProviderError,
+)
 from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
 from algohint.infrastructure.sqlite_review_history_repository import (
     SqliteReviewHistoryRepository,
@@ -41,8 +48,20 @@ from algohint.infrastructure.sqlite_review_history_repository import (
 from algohint.infrastructure.sqlite_research_history_repository import (
     SqliteResearchHistoryRepository,
 )
+from algohint.infrastructure.sqlite_research_evaluation_run_repository import (
+    SqliteResearchEvaluationRunRepository,
+)
 from algohint.ui.gradio_app import build_app
 from algohint.ui.view_models import ApplicationServices
+
+
+def _evaluation_case_limit(value: str) -> int:
+    """Parse a bounded live-evaluation count before any provider is created."""
+
+    parsed = int(value)
+    if not 1 <= parsed <= 15:
+        raise argparse.ArgumentTypeError("max-cases must be between 1 and 15")
+    return parsed
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -93,6 +112,33 @@ def _parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print machine-readable metrics",
+    )
+    evaluate.add_argument(
+        "--run-live",
+        action="store_true",
+        help="Run unmeasured fixed cases through Gemma/Exa before reporting",
+    )
+    evaluate.add_argument(
+        "--confirm-live-search-cost",
+        action="store_true",
+        help="Explicitly acknowledge that the live run consumes Exa credit",
+    )
+    evaluate.add_argument(
+        "--max-cases",
+        type=_evaluation_case_limit,
+        default=1,
+        help="Maximum live cases in this invocation (default: 1, maximum: 15)",
+    )
+    evaluate.add_argument(
+        "--case-id",
+        action="append",
+        default=[],
+        help="Restrict live execution to a fixed case ID; may be repeated",
+    )
+    evaluate.add_argument(
+        "--rerun",
+        action="store_true",
+        help="Re-run selected cases even when saved evidence already exists",
     )
     return parser
 
@@ -191,18 +237,70 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "evaluate":
         import json
 
-        report = ResearchEvaluationService(
+        evaluation = ResearchEvaluationService(
             problems,
             knowledge,
             JsonResearchEvaluationCaseRepository(paths),
+            SqliteResearchEvaluationRunRepository(paths),
             research_history,
-        ).evaluate(args.profile_id)
-        payload = report.__dict__
+        )
+        executed_case_ids: tuple[str, ...] = ()
+        if args.run_live:
+            if not args.confirm_live_search_cost:
+                raise SystemExit(
+                    "--run-live requires --confirm-live-search-cost"
+                )
+            if (
+                config.gemma_backend is not GemmaBackend.TRANSFORMERS_HTTP
+                or not config.gemma_base_url
+            ):
+                raise SystemExit(
+                    "live evaluation requires the transformers_http Gemma Server"
+                )
+            research_provider = GemmaResearchProvider(
+                config.gemma_base_url,
+                timeout_seconds=config.local_timeout_seconds,
+            )
+            try:
+                executed = evaluation.run_live(
+                    research_provider,
+                    max_cases=args.max_cases,
+                    case_ids=tuple(args.case_id),
+                    rerun=args.rerun,
+                )
+            except (
+                LiveResearchEvaluationUnavailableError,
+                ResearchProviderError,
+                ValueError,
+            ) as error:
+                raise SystemExit(
+                    f"live research evaluation unavailable: {error}"
+                ) from error
+            executed_case_ids = tuple(run.case_id for run in executed)
+        elif (
+            args.confirm_live_search_cost
+            or args.rerun
+            or args.case_id
+            or args.max_cases != 1
+        ):
+            raise SystemExit(
+                "live evaluation options require --run-live"
+            )
+        report = evaluation.evaluate(args.profile_id)
+        payload = {
+            "executed_case_ids": executed_case_ids,
+            **asdict(report),
+        }
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
         else:
             for name, value in payload.items():
-                print(f"{name}: {value}")
+                if isinstance(value, dict):
+                    print(f"{name}:")
+                    for metric, metric_value in value.items():
+                        print(f"  {metric}: {metric_value}")
+                else:
+                    print(f"{name}: {value}")
         return
     tutor_sessions = JsonTutorSessionRepository(paths)
     providers = build_hint_providers(config)

@@ -597,6 +597,17 @@ class ResearchEvaluationCase(FrozenModel):
     expected_focus: str = Field(min_length=1, max_length=200)
 
 
+class ResearchEvaluationRun(FrozenModel):
+    """One persisted live result for a fixed public evaluation case."""
+
+    entry_id: int = Field(gt=0)
+    case_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    judge_status: Literal["WA", "TLE", "AC"]
+    created_at: datetime
+    result: ResearchResult
+
+
 class CodeReviewEntry(FrozenModel):
     """Persisted review text; the submitted source itself remains absent."""
 
