@@ -42,6 +42,17 @@ def test_release_manifest_pins_public_repository_and_full_commit() -> None:
     assert all(character in "0123456789abcdef" for character in commit)
 
 
+def test_algohint_contains_only_consumer_side_gemma_integration() -> None:
+    embedded_service = PROJECT_ROOT / "services" / "gemma-transformers-server"
+    local_launcher = (PROJECT_ROOT / "scripts" / "run-local-stack.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert not embedded_service.exists()
+    assert "services/gemma-transformers-server" not in local_launcher
+    assert "current/scripts/server-control.sh" in local_launcher
+
+
 def test_local_installer_sends_reviewed_bootstrap_and_pinned_values(
     tmp_path: Path,
 ) -> None:

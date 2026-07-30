@@ -11,6 +11,9 @@ wheels/
 .coverage
 htmlcov/
 
+# Recoverable local trash is never part of product source or publication.
+/_GARBAGE/
+
 # Virtual environments
 .venv
 
