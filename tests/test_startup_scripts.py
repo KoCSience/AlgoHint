@@ -52,13 +52,33 @@ fi
 printf 'app %s backend=%s deployment=%s base=%s\\n' \
   "$*" "${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_DEPLOYMENT:-}" \
   "${ALGOHINT_GEMMA_BASE_URL:-}" >>"$FAKE_CALLS"
+if [[ "${1:-}" == "doctor" ]]; then
+    exit "${FAKE_DOCTOR_FAIL:-0}"
+fi
 if [[ "${FAKE_APP_BLOCK:-0}" == "1" ]]; then
     trap 'exit 0' TERM INT
     while true; do sleep 1; done
 fi
 """,
     )
-    _write_executable(fake_bin / "curl", "printf '{\"status\":\"ok\",\"ready\":true}\\n'\n")
+    _write_executable(
+        fake_bin / "curl",
+        """
+if [[ -n "${FAKE_HEALTH_CALLS:-}" ]]; then
+    count=0
+    if [[ -r "$FAKE_HEALTH_CALLS" ]]; then
+        count="$(<"$FAKE_HEALTH_CALLS")"
+    fi
+    count=$((count + 1))
+    printf '%s\\n' "$count" >"$FAKE_HEALTH_CALLS"
+    if [[ -n "${FAKE_HEALTH_FAIL_AFTER:-}" ]] &&
+        ((count > FAKE_HEALTH_FAIL_AFTER)); then
+        exit 7
+    fi
+fi
+printf '{"status":"ok","ready":true}\\n'
+""",
+    )
     environment = {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
@@ -79,6 +99,7 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "check-gemma-ssh.sh",
         SCRIPTS / "install-gemma-server-ssh.sh",
         SCRIPTS / "sync-gemma-credentials-ssh.sh",
+        SCRIPTS / "lib" / "gemma-stack-health.sh",
         SCRIPTS / "lib" / "gemma-ssh-target.sh",
     ]
     result = subprocess.run(
@@ -132,6 +153,79 @@ printf '%s env=%s\\n' "$*" "${ALGOHINT_ENV:-}" >"$FAKE_UV_CALLS"
     assert "private-launcher-secret-marker" not in result.stdout + result.stderr
 
 
+def test_algohint_launcher_reapplies_managed_gemma_config_after_credentials(
+    tmp_path: Path,
+) -> None:
+    calls = tmp_path / "uv-calls"
+    fake_uv = tmp_path / "uv"
+    credentials = tmp_path / "credentials"
+    credentials.write_text(
+        "ALGOHINT_GEMMA_BACKEND='vllm'\n"
+        "ALGOHINT_GEMMA_DEPLOYMENT='auto'\n"
+        "ALGOHINT_GEMMA_BASE_URL='https://stale.example.invalid/v1'\n",
+        encoding="utf-8",
+    )
+    _write_executable(
+        fake_uv,
+        """
+printf 'backend=%s deployment=%s base=%s managed_deployment=%s managed_base=%s\\n' \
+  "${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_DEPLOYMENT:-}" \
+  "${ALGOHINT_GEMMA_BASE_URL:-}" "${ALGOHINT_MANAGED_GEMMA_DEPLOYMENT:-}" \
+  "${ALGOHINT_MANAGED_GEMMA_BASE_URL:-}" >"$FAKE_UV_CALLS"
+""",
+    )
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-algohint.sh")],
+        env={
+            **os.environ,
+            "ALGOHINT_UV_BIN": str(fake_uv),
+            "ALGOHINT_CREDENTIALS": str(credentials),
+            "ALGOHINT_MANAGED_GEMMA_DEPLOYMENT": "remote",
+            "ALGOHINT_MANAGED_GEMMA_BASE_URL": "http://127.0.0.1:18000/v1",
+            "FAKE_UV_CALLS": str(calls),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    invocation = calls.read_text(encoding="utf-8")
+    assert "backend=transformers_http" in invocation
+    assert "deployment=remote" in invocation
+    assert "base=http://127.0.0.1:18000/v1" in invocation
+    assert "managed_deployment= managed_base=" in invocation
+    assert "stale.example.invalid" not in invocation
+
+
+def test_algohint_launcher_rejects_non_loopback_managed_endpoint(
+    tmp_path: Path,
+) -> None:
+    fake_uv = tmp_path / "uv"
+    calls = tmp_path / "uv-calls"
+    _write_executable(fake_uv, "printf 'unexpected\\n' >\"$FAKE_UV_CALLS\"\n")
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-algohint.sh")],
+        env={
+            **os.environ,
+            "ALGOHINT_UV_BIN": str(fake_uv),
+            "ALGOHINT_CREDENTIALS": str(tmp_path / "missing-credentials"),
+            "ALGOHINT_MANAGED_GEMMA_DEPLOYMENT": "remote",
+            "ALGOHINT_MANAGED_GEMMA_BASE_URL": "https://remote.example.invalid/v1",
+            "FAKE_UV_CALLS": str(calls),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "loopback HTTP endpoint" in result.stderr
+    assert not calls.exists()
+
+
 def test_local_stack_stops_only_gemma_it_started(tmp_path: Path) -> None:
     environment, calls = _stack_fakes(tmp_path)
 
@@ -146,6 +240,8 @@ def test_local_stack_stops_only_gemma_it_started(tmp_path: Path) -> None:
     first_calls = calls.read_text(encoding="utf-8")
     assert "control start" in first_calls
     assert "control stop" in first_calls
+    assert "app doctor --provider gemma" in first_calls
+    assert "app --port 9786" in first_calls
     assert "deployment=local" in first_calls
     assert "app_root= code_root=" in first_calls
 
@@ -162,6 +258,56 @@ def test_local_stack_stops_only_gemma_it_started(tmp_path: Path) -> None:
     second_calls = calls.read_text(encoding="utf-8")
     assert "control start" not in second_calls
     assert "control stop" not in second_calls
+
+
+def test_local_stack_uses_canonical_config_despite_stale_environment(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _stack_fakes(tmp_path)
+    environment.update(
+        {
+            "ALGOHINT_GEMMA_BACKEND": "vllm",
+            "ALGOHINT_GEMMA_DEPLOYMENT": "remote",
+            "ALGOHINT_GEMMA_BASE_URL": "https://stale.example.invalid/v1",
+        }
+    )
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-local-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "backend=transformers_http" in recorded
+    assert "deployment=local" in recorded
+    assert "base=http://127.0.0.1:18080/v1" in recorded
+    assert "stale.example.invalid" not in recorded
+
+
+def test_local_stack_stops_before_ui_when_contract_check_fails(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _stack_fakes(tmp_path)
+    environment["FAKE_DOCTOR_FAIL"] = "1"
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-local-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("app ") == 1
+    assert "app doctor --provider gemma" in recorded
+    assert "control stop" in recorded
+    assert "AlgoHint was not started" in result.stderr
 
 
 def test_local_keep_flag_preserves_new_server(tmp_path: Path) -> None:
@@ -228,6 +374,48 @@ def test_local_stack_ctrl_c_stops_owned_children(tmp_path: Path) -> None:
     assert "control stop" in calls.read_text(encoding="utf-8")
 
 
+def test_local_stack_reports_runtime_health_loss_without_stopping_app(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _stack_fakes(tmp_path)
+    health_calls = tmp_path / "health-calls"
+    environment.update(
+        {
+            "FAKE_APP_BLOCK": "1",
+            "FAKE_HEALTH_CALLS": str(health_calls),
+            "FAKE_HEALTH_FAIL_AFTER": "1",
+            "ALGOHINT_GEMMA_MONITOR_INTERVAL_SECONDS": "1",
+        }
+    )
+    process = subprocess.Popen(
+        [str(SCRIPTS / "run-local-stack.sh")],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            if health_calls.exists() and int(health_calls.read_text()) >= 4:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("runtime health monitor did not reach its failure threshold")
+        assert process.poll() is None
+        process.send_signal(signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=5)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+    assert process.returncode == 130, (stdout, stderr)
+    assert "health was lost after startup" in stderr
+    assert "remains running with RuleBased fallback" in stderr
+    assert "control stop" in calls.read_text(encoding="utf-8")
+
+
 def _ssh_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     fake_bin = tmp_path / "ssh-bin"
     fake_bin.mkdir()
@@ -239,9 +427,12 @@ def _ssh_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     _write_executable(
         runner,
         """
-printf 'app backend=%s deployment=%s base=%s\\n' \
-  "${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_DEPLOYMENT:-}" \
+printf 'app %s backend=%s deployment=%s base=%s\\n' \
+  "$*" "${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_DEPLOYMENT:-}" \
   "${ALGOHINT_GEMMA_BASE_URL:-}" >>"$FAKE_CALLS"
+if [[ "${1:-}" == "doctor" ]]; then
+    exit "${FAKE_DOCTOR_FAIL:-0}"
+fi
 """,
     )
     _write_executable(
@@ -297,8 +488,115 @@ def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None
     assert "'start'" in recorded
     assert " -N -T " in f" {recorded} "
     assert "'stop'" in recorded
+    assert "app doctor --provider gemma" in recorded
     assert "deployment=remote" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
+
+
+def test_ssh_stack_uses_canonical_config_despite_stale_environment(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    environment.update(
+        {
+            "ALGOHINT_GEMMA_BACKEND": "vllm",
+            "ALGOHINT_GEMMA_DEPLOYMENT": "local",
+            "ALGOHINT_GEMMA_BASE_URL": "https://stale.example.invalid/v1",
+        }
+    )
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "backend=transformers_http" in recorded
+    assert "deployment=remote" in recorded
+    assert "base=http://127.0.0.1:18000/v1" in recorded
+    assert "stale.example.invalid" not in recorded
+
+
+def test_ssh_stack_stops_before_ui_when_contract_check_fails(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    environment["FAKE_DOCTOR_FAIL"] = "1"
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("app ") == 1
+    assert "app doctor --provider gemma" in recorded
+    assert "'stop'" in recorded
+    assert "AlgoHint was not started" in result.stderr
+
+
+def test_ssh_stack_does_not_duplicate_explicit_gemma_doctor(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(SCRIPTS / "run-ssh-stack.sh"),
+            "--keep-remote",
+            "doctor",
+            "--provider",
+            "gemma",
+        ],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("app ") == 1
+    assert "app doctor --provider gemma" in recorded
+
+
+def test_ssh_stack_recognizes_doctor_after_global_options(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(SCRIPTS / "run-ssh-stack.sh"),
+            "--keep-remote",
+            "--environment",
+            "development",
+            "doctor",
+            "--provider",
+            "gemma",
+        ],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("app ") == 1
+    assert "--environment development doctor --provider gemma" in recorded
 
 
 def test_ssh_stack_fails_before_start_when_remote_control_is_missing(
