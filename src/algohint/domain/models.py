@@ -406,6 +406,56 @@ class GeneratedCodeReview(FrozenModel):
     model_name: str
 
 
+class PersonalizedQuizRequest(FrozenModel):
+    """Bounded, public completion context for code-aware question generation."""
+
+    learner_key: str = Field(pattern=r"^[a-f0-9]{64}$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    title: str
+    statement: str
+    constraints: str
+    learning_goal: str
+    tags: tuple[str, ...]
+    source_code: str = Field(min_length=1, max_length=16_384)
+    mode: PersonalizedQuizMode
+
+
+class GeneratedPersonalizedQuizQuestion(FrozenModel):
+    """Provider question before the application assigns grading identifiers."""
+
+    focus: CodeReviewCategory
+    prompt: str = Field(min_length=1, max_length=500)
+    options: tuple[
+        Annotated[str, Field(min_length=1, max_length=300)],
+        ...,
+    ] = Field(min_length=3, max_length=4)
+    correct_option_index: int = Field(ge=0, le=3)
+    explanation: str = Field(min_length=1, max_length=800)
+
+    def model_post_init(self, __context: object) -> None:
+        normalized = [option.strip() for option in self.options]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Generated personalized quiz options must be unique")
+        if self.correct_option_index >= len(self.options):
+            raise ValueError("Generated personalized quiz answer is outside options")
+
+
+class GeneratedPersonalizedQuiz(FrozenModel):
+    """Strict provider output ready for safety checks and server-owned IDs."""
+
+    questions: tuple[GeneratedPersonalizedQuizQuestion, ...] = Field(
+        min_length=2,
+        max_length=5,
+    )
+    provider: str
+    model_name: str
+
+    def model_post_init(self, __context: object) -> None:
+        prompts = [question.prompt.strip() for question in self.questions]
+        if len(prompts) != len(set(prompts)):
+            raise ValueError("Generated personalized quiz prompts must be unique")
+
+
 class CodeReviewEntry(FrozenModel):
     """Persisted review text; the submitted source itself remains absent."""
 

@@ -17,7 +17,9 @@ from algohint.domain.models import (
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
+    GeneratedPersonalizedQuiz,
     HintGenerationRequest,
+    PersonalizedQuizRequest,
     ProviderAvailability,
     ProviderDiagnostic,
 )
@@ -29,6 +31,11 @@ from algohint.infrastructure.code_review_prompt import (
 from algohint.infrastructure.gemma_endpoint import gemma_endpoint_availability
 from algohint.infrastructure.hint_prompt import SYSTEM_INSTRUCTIONS, build_hint_prompt
 from algohint.infrastructure.provider_debug import format_provider_exception
+from algohint.infrastructure.personalized_quiz_prompt import (
+    PERSONALIZED_QUIZ_INSTRUCTIONS,
+    ProviderPersonalizedQuizPayload,
+    build_personalized_quiz_prompt,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +52,11 @@ class _HintResponse(_ResponseModel):
 class _ReviewResponse(_ResponseModel):
     model: str
     text: str = Field(min_length=1, max_length=4_000)
+
+
+class _QuizResponse(_ResponseModel):
+    model: str
+    text: str = Field(min_length=1, max_length=8_000)
 
 
 class _ModelInfo(_ResponseModel):
@@ -194,6 +206,41 @@ class TransformersHttpHintProvider:
             self._log_development_exception("reviews", error)
             raise self._classified_error(error) from error
         return payload.to_generated(provider="gemma", model_name=self._model)
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz:
+        """Use the dedicated authenticated quiz endpoint and validate its JSON."""
+
+        try:
+            with self._managed_client() as client:
+                response = client.post(
+                    f"{self._base_url}/quizzes",
+                    headers=self._headers(),
+                    json={
+                        "model": self._model,
+                        "system_instructions": PERSONALIZED_QUIZ_INSTRUCTIONS,
+                        "learner_context": build_personalized_quiz_prompt(request),
+                    },
+                )
+                response.raise_for_status()
+                response_payload = _QuizResponse.model_validate(response.json())
+            if response_payload.model != self._model:
+                raise ValueError("response model does not match configured model")
+            payload = ProviderPersonalizedQuizPayload.model_validate_json(
+                response_payload.text
+            )
+            return payload.to_generated(
+                provider="gemma",
+                model_name=self._model,
+                mode=request.mode,
+            )
+        except HintProviderError:
+            raise
+        except Exception as error:
+            self._log_development_exception("quizzes", error)
+            raise self._classified_error(error) from error
 
     def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
         """Check auth, endpoint, model, and readiness without learner content."""

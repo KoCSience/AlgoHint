@@ -35,6 +35,7 @@ class FakeRuntime:
         learner_context: str,
         *,
         max_output_chars: int = 1_200,
+        max_new_tokens: int | None = None,
     ) -> str:
         self.generate_calls += 1
         return self.text
@@ -115,6 +116,27 @@ def test_review_endpoint_uses_same_authenticated_bounded_runtime() -> None:
     assert runtime.generate_calls == 1
 
 
+def test_quiz_endpoint_uses_dedicated_bounded_contract() -> None:
+    runtime = FakeRuntime(text='{"questions":[]}')
+    with client_for(runtime) as client:
+        response = client.post(
+            "/v1/quizzes",
+            headers=AUTHORIZATION,
+            json={
+                "model": "google/gemma-4-12B-it",
+                "system_instructions": "trusted quiz system",
+                "learner_context": "untrusted accepted source context",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "model": "google/gemma-4-12B-it",
+        "text": '{"questions":[]}',
+    }
+    assert runtime.generate_calls == 1
+
+
 def test_hint_endpoint_rejects_unknown_model_and_oversized_fields() -> None:
     runtime = FakeRuntime()
     with client_for(runtime) as client:
@@ -164,6 +186,7 @@ def test_parallel_generation_is_rejected_without_queueing() -> None:
             learner_context: str,
             *,
             max_output_chars: int = 1_200,
+            max_new_tokens: int | None = None,
         ) -> str:
             entered.set()
             assert release.wait(timeout=5)
@@ -199,6 +222,7 @@ def test_invalid_runtime_output_is_a_safe_bad_gateway() -> None:
             learner_context: str,
             *,
             max_output_chars: int = 1_200,
+            max_new_tokens: int | None = None,
         ) -> str:
             raise InvalidModelOutputError("private generated output")
 

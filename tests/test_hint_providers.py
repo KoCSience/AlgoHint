@@ -14,15 +14,24 @@ from algohint.domain.enums import (
     HintProviderId,
     HintTrigger,
     JudgeStatus,
+    PersonalizedQuizMode,
     ProviderFailureReason,
 )
 from algohint.domain.errors import HintProviderError
-from algohint.domain.models import CodeReviewRequest, Hint, HintGenerationRequest
+from algohint.domain.models import (
+    CodeReviewRequest,
+    Hint,
+    HintGenerationRequest,
+    PersonalizedQuizRequest,
+)
 from algohint.infrastructure.code_review_prompt import build_code_review_prompt
 from algohint.infrastructure.gemma_hint_provider import GemmaHintProvider
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 from algohint.infrastructure.hint_prompt import build_hint_prompt
 from algohint.infrastructure.openai_hint_provider import OpenAIHintProvider
+from algohint.infrastructure.personalized_quiz_prompt import (
+    build_personalized_quiz_prompt,
+)
 
 
 def make_request() -> HintGenerationRequest:
@@ -175,6 +184,40 @@ def review_response_json() -> str:
     )
 
 
+def quiz_response_json(count: int = 3) -> str:
+    return json.dumps(
+        {
+            "questions": [
+                {
+                    "focus": CodeReviewCategory.EDGE_CASES.value,
+                    "prompt": f"境界条件の確認 {index}",
+                    "options": ["必要", "不要", "無関係"],
+                    "correct_option_index": 0,
+                    "explanation": "境界条件を確認するためです。",
+                }
+                for index in range(count)
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+
+def make_quiz_request(
+    mode: PersonalizedQuizMode = PersonalizedQuizMode.FIXED_3,
+) -> PersonalizedQuizRequest:
+    return PersonalizedQuizRequest(
+        learner_key="a" * 64,
+        problem_id="problem",
+        title="二つの値",
+        statement="二つの整数を処理する。",
+        constraints="0以上",
+        learning_goal="入力を確認する",
+        tags=("input",),
+        source_code="print(0)",
+        mode=mode,
+    )
+
+
 def make_review_request() -> CodeReviewRequest:
     return CodeReviewRequest(
         learner_key="a" * 64,
@@ -195,6 +238,15 @@ def test_code_review_prompt_contains_only_released_learning_context() -> None:
 
     assert '"released_explanation"' in prompt
     assert '"source_code"' in prompt
+    assert "hidden_tests" not in prompt
+    assert "model_solution" not in prompt
+    assert "correct_option_id" not in prompt
+
+
+def test_personalized_quiz_prompt_excludes_private_judge_assets() -> None:
+    prompt = build_personalized_quiz_prompt(make_quiz_request())
+
+    assert '"source_code":"print(0)"' in prompt
     assert "hidden_tests" not in prompt
     assert "model_solution" not in prompt
     assert "correct_option_id" not in prompt
@@ -234,6 +286,23 @@ def test_openai_provider_uses_distinct_review_schema_without_storage(
     assert responses.kwargs["text"]["format"]["name"] == "algohint_code_review"
 
 
+def test_openai_provider_uses_distinct_personalized_quiz_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only-placeholder")
+    responses = FakeOpenAIResponses(quiz_response_json())
+    provider = OpenAIHintProvider(
+        "gpt-5.6-sol",
+        client_factory=lambda: SimpleNamespace(responses=responses),
+    )
+
+    quiz = provider.generate_quiz(make_quiz_request())
+
+    assert len(quiz.questions) == 3
+    assert responses.kwargs["store"] is False
+    assert responses.kwargs["text"]["format"]["name"] == "algohint_personalized_quiz"
+
+
 def test_gemma_provider_uses_configured_openai_compatible_endpoint() -> None:
     completions = FakeGemmaCompletions(response_json())
     client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -266,6 +335,23 @@ def test_gemma_provider_uses_review_contract() -> None:
     assert review.provider == "gemma"
     response_format = completions.kwargs["response_format"]
     assert response_format["json_schema"]["name"] == "algohint_code_review"
+
+
+def test_gemma_provider_uses_personalized_quiz_contract() -> None:
+    completions = FakeGemmaCompletions(quiz_response_json())
+    provider = GemmaHintProvider(
+        "google/gemma-4-12B-it",
+        "http://127.0.0.1:8000/v1",
+        client_factory=lambda: SimpleNamespace(
+            chat=SimpleNamespace(completions=completions)
+        ),
+    )
+
+    quiz = provider.generate_quiz(make_quiz_request())
+
+    assert quiz.provider == "gemma"
+    response_format = completions.kwargs["response_format"]
+    assert response_format["json_schema"]["name"] == "algohint_personalized_quiz"
 
 
 def test_remote_gemma_endpoint_requires_off_device_consent() -> None:
@@ -344,6 +430,25 @@ def test_gemini_provider_requests_review_json_schema(
     assert review.provider == "gemini"
     config = models.kwargs["config"]
     assert config["response_json_schema"]["title"] == "ProviderCodeReviewPayload"
+
+
+def test_gemini_provider_requests_personalized_quiz_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-only-placeholder")
+    models = FakeGeminiModels(quiz_response_json())
+    provider = GeminiHintProvider(
+        "gemini-3.6-flash",
+        client_factory=lambda: SimpleNamespace(models=models),
+    )
+
+    quiz = provider.generate_quiz(make_quiz_request())
+
+    assert quiz.provider == "gemini"
+    config = models.kwargs["config"]
+    assert config["response_json_schema"]["title"] == (
+        "ProviderPersonalizedQuizPayload"
+    )
 
 
 def test_gemini_provider_pins_developer_api_authentication(

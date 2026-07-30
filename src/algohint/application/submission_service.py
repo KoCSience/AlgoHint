@@ -61,10 +61,16 @@ class SubmissionService:
         cases = self._problems.get_tests(problem_id, include_hidden=mode is SubmissionMode.FULL)
         result = self._judge.judge(source, cases, self._policy)
         log = self._logs.load_log(profile_id)
+        current = log.progress.get(problem_id, ProblemProgress())
+        newly_completed = (
+            mode is SubmissionMode.FULL
+            and result.status is JudgeStatus.AC
+            and not current.solved
+        )
         self._logs.save_log(self._updated_log(log, problem_id, result.status, mode))
         message = {
             JudgeStatus.AC: (
-                "ACです。解説を開けます。"
+                "AC、おめでとうございます！固定小テストに進みましょう。"
                 if mode is SubmissionMode.FULL
                 else "公開サンプルはACです。全テストで提出して完了を確認しましょう。"
             ),
@@ -82,6 +88,7 @@ class SubmissionService:
             total_count=result.total_count,
             elapsed_ms=result.elapsed_ms,
             message=message,
+            newly_completed=newly_completed,
             diagnostic=self._diagnostic_policy.create(result, self._policy),
             sample_input=failed.input_text if reveal_sample and failed is not None else None,
             actual_output=result.stdout

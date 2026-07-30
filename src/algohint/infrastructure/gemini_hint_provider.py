@@ -14,7 +14,9 @@ from algohint.domain.models import (
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
+    GeneratedPersonalizedQuiz,
     HintGenerationRequest,
+    PersonalizedQuizRequest,
     ProviderAvailability,
     ProviderDiagnostic,
 )
@@ -29,6 +31,11 @@ from algohint.infrastructure.hint_prompt import (
     build_hint_prompt,
 )
 from algohint.infrastructure.provider_debug import format_provider_exception
+from algohint.infrastructure.personalized_quiz_prompt import (
+    PERSONALIZED_QUIZ_INSTRUCTIONS,
+    ProviderPersonalizedQuizPayload,
+    build_personalized_quiz_prompt,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -207,6 +214,51 @@ class GeminiHintProvider:
                 error,
             ) from error
         return payload.to_generated(provider="gemini", model_name=self._model)
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz:
+        """Request and validate a distinct code-aware quiz contract."""
+
+        try:
+            with self._managed_client() as client:
+                response = client.models.generate_content(
+                    model=self._model,
+                    contents=build_personalized_quiz_prompt(request),
+                    config={
+                        "system_instruction": PERSONALIZED_QUIZ_INSTRUCTIONS,
+                        "response_mime_type": "application/json",
+                        "response_json_schema": (
+                            ProviderPersonalizedQuizPayload.model_json_schema()
+                        ),
+                        "max_output_tokens": 1_800,
+                    },
+                )
+                response_text = response.text
+        except HintProviderError:
+            raise
+        except Exception as error:
+            self._log_development_exception("generate_quiz", error)
+            raise self._classified_error(error) from error
+        if not isinstance(response_text, str) or not response_text.strip():
+            empty_error = ValueError("empty provider response")
+            raise self._response_error(
+                ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE,
+                empty_error,
+            ) from empty_error
+        try:
+            payload = ProviderPersonalizedQuizPayload.model_validate_json(response_text)
+            return payload.to_generated(
+                provider="gemini",
+                model_name=self._model,
+                mode=request.mode,
+            )
+        except (ValidationError, ValueError) as error:
+            raise self._response_error(
+                ProviderFailureReason.INVALID_STRUCTURED_RESPONSE,
+                error,
+            ) from error
 
     def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
         """Check key, permission, and model reachability without learner content."""

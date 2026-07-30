@@ -33,6 +33,7 @@ class HintRuntime(Protocol):
         learner_context: str,
         *,
         max_output_chars: int = 1_200,
+        max_new_tokens: int | None = None,
     ) -> str: ...
 
 
@@ -84,6 +85,7 @@ class TransformersGemmaRuntime:
         learner_context: str,
         *,
         max_output_chars: int = 1_200,
+        max_new_tokens: int | None = None,
     ) -> str:
         """Apply Gemma's chat template, suppress thinking, and return final plain text."""
 
@@ -113,10 +115,13 @@ class TransformersGemmaRuntime:
         model_device = getattr(model, "device", None)
         if model_device is not None:
             inputs = inputs.to(model_device)
+        output_tokens = max_new_tokens or self._config.max_new_tokens
+        if not 1 <= output_tokens <= 4_096:
+            raise ValueError("max_new_tokens is outside the supported range")
         with torch.inference_mode():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=self._config.max_new_tokens,
+                max_new_tokens=output_tokens,
                 do_sample=True,
                 temperature=1.0,
                 top_p=0.95,
@@ -127,7 +132,7 @@ class TransformersGemmaRuntime:
         text = self._final_text(processor, decoded, input_ids)
         if not text:
             raise InvalidModelOutputError("model returned no final text")
-        if not 1 <= max_output_chars <= 4_000:
+        if not 1 <= max_output_chars <= 8_000:
             raise ValueError("max_output_chars is outside the supported range")
         if len(text) > max_output_chars:
             raise InvalidModelOutputError("model output exceeds the character limit")

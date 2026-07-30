@@ -12,10 +12,16 @@ from algohint.domain.enums import (
     GemmaDeployment,
     HintCategory,
     HintTrigger,
+    PersonalizedQuizMode,
     ProviderFailureReason,
 )
 from algohint.domain.errors import HintProviderError
-from algohint.domain.models import CodeReviewRequest, Hint, HintGenerationRequest
+from algohint.domain.models import (
+    CodeReviewRequest,
+    Hint,
+    HintGenerationRequest,
+    PersonalizedQuizRequest,
+)
 from algohint.infrastructure.transformers_http_hint_provider import (
     TransformersHttpHintProvider,
 )
@@ -56,6 +62,20 @@ def make_review_request() -> CodeReviewRequest:
         released_explanation="二値を加算します。",
         source_code="print(0)",
         completion_reason=CompletionReason.FULL_AC,
+    )
+
+
+def make_quiz_request() -> PersonalizedQuizRequest:
+    return PersonalizedQuizRequest(
+        learner_key="b" * 64,
+        problem_id="problem",
+        title="二つの値",
+        statement="二つの整数を処理する。",
+        constraints="0以上",
+        learning_goal="入力を確認する",
+        tags=("input",),
+        source_code="print(0)",
+        mode=PersonalizedQuizMode.FIXED_3,
     )
 
 
@@ -146,6 +166,44 @@ def test_generate_review_uses_dedicated_endpoint_and_validates_json(
     assert review.provider == "gemma"
     assert review.improvements[0].category is CodeReviewCategory.READABILITY
     assert all(client.is_closed for client in clients)
+
+
+def test_generate_quiz_uses_dedicated_endpoint_and_validates_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            json={
+                "model": MODEL,
+                "text": json.dumps(
+                    {
+                        "questions": [
+                            {
+                                "focus": "edge_cases",
+                                "prompt": f"境界条件 {index}",
+                                "options": ["必要", "不要", "無関係"],
+                                "correct_option_index": 0,
+                                "explanation": "境界条件を確認するためです。",
+                            }
+                            for index in range(3)
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        )
+
+    provider, _ = provider_with_handler(handler)
+    quiz = provider.generate_quiz(make_quiz_request())
+
+    assert paths == ["/v1/quizzes"]
+    assert quiz.provider == "gemma"
+    assert len(quiz.questions) == 3
 
 
 def test_doctor_uses_only_model_discovery(

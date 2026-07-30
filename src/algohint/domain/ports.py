@@ -7,6 +7,7 @@ from algohint.domain.models import (
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
+    GeneratedPersonalizedQuiz,
     HintGenerationRequest,
     JudgePolicy,
     JudgeResult,
@@ -14,6 +15,7 @@ from algohint.domain.models import (
     LLMResponse,
     LearningLog,
     PersonalizedQuizAttempt,
+    PersonalizedQuizRequest,
     PersonalizedQuizSet,
     Problem,
     Profile,
@@ -148,8 +150,24 @@ class CodeReviewProvider(Protocol):
     def generate_review(self, request: CodeReviewRequest) -> GeneratedCodeReview: ...
 
 
-class LearningProvider(HintProvider, CodeReviewProvider, Protocol):
-    """Provider supporting both isolated learning contracts."""
+class PersonalizedQuizProvider(Protocol):
+    """Generate bounded code-aware questions without grading learner answers."""
+
+    def availability(self) -> ProviderAvailability: ...
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz: ...
+
+
+class LearningProvider(
+    HintProvider,
+    CodeReviewProvider,
+    PersonalizedQuizProvider,
+    Protocol,
+):
+    """Provider supporting every isolated learning contract."""
 
 
 class JudgeRunner(Protocol):

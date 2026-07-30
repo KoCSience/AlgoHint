@@ -39,6 +39,7 @@ class SubmissionView:
     total_count: int
     elapsed_ms: int | None
     message: str
+    newly_completed: bool = False
     diagnostic: "LearnerDiagnostic | None" = None
     sample_input: str | None = None
     actual_output: str | None = None
@@ -106,6 +107,41 @@ class PublicQuizQuestion:
     topic: str
     prompt: str
     options: tuple[PublicQuizOption, ...]
+
+
+@dataclass(frozen=True)
+class PublicPersonalizedQuiz:
+    """Latest generated questions without correctness metadata."""
+
+    quiz_set_id: str
+    generated_at: datetime
+    provider: str
+    model_name: str
+    questions: tuple[PublicQuizQuestion, ...]
+
+
+@dataclass(frozen=True)
+class PersonalizedQuizReceipt:
+    """Safe generation result that does not expose answers or learner source."""
+
+    quiz_set_id: str
+    generated_at: datetime
+    provider: str
+    model_name: str
+    question_count: int
+    quota: ReviewQuotaStatus
+
+
+@dataclass(frozen=True)
+class PersonalizedQuizResult:
+    """Deterministic grading result for one generated quiz set."""
+
+    quiz_set_id: str
+    score: int
+    total: int
+    feedback: tuple["QuizQuestionFeedback", ...]
+    attempted_at: datetime
+    quota: ReviewQuotaStatus
 
 
 @dataclass(frozen=True)

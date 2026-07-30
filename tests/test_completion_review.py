@@ -18,6 +18,9 @@ from algohint.domain.models import (
     CodeReviewPoint,
     CodeReviewRequest,
     GeneratedCodeReview,
+    GeneratedPersonalizedQuiz,
+    GeneratedPersonalizedQuizQuestion,
+    PersonalizedQuizRequest,
     ProviderAvailability,
 )
 from algohint.infrastructure.filesystem_paths import DataPaths
@@ -36,6 +39,7 @@ CORRECT_SOURCE = "a, b = map(int, input().split())\nprint(a + b)"
 class FakeReviewProvider:
     def __init__(self, *, sends_data_off_device: bool = False) -> None:
         self.requests: list[CodeReviewRequest] = []
+        self.quiz_requests: list[PersonalizedQuizRequest] = []
         self._availability = ProviderAvailability(
             available=True,
             sends_data_off_device=sends_data_off_device,
@@ -58,6 +62,27 @@ class FakeReviewProvider:
             ),
             provider="fake",
             model_name="fake-review",
+        )
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz:
+        self.quiz_requests.append(request)
+        count = 3 if request.mode.value == "fixed_3" else 2
+        return GeneratedPersonalizedQuiz(
+            questions=tuple(
+                GeneratedPersonalizedQuizQuestion(
+                    focus=CodeReviewCategory.EDGE_CASES,
+                    prompt=f"コード固有の境界条件 {index}",
+                    options=("確認する", "確認しない", "無関係"),
+                    correct_option_index=0,
+                    explanation="境界条件の確認が必要だからです。",
+                )
+                for index in range(count)
+            ),
+            provider="fake",
+            model_name="fake-quiz",
         )
 
 
@@ -224,3 +249,39 @@ def test_code_review_history_is_paginated_newest_first(tmp_path: Path) -> None:
     assert len(newest_page.entries) == newest_page.page_size == 20
     assert len(oldest_page.entries) == 1
     assert newest_page.entries[0].reviewed_at >= oldest_page.entries[0].reviewed_at
+
+
+def test_personalized_quiz_is_generated_after_ac_but_released_after_fixed_quiz(
+    tmp_path: Path,
+) -> None:
+    provider = FakeReviewProvider()
+    reviews, submissions, problems, profile_id = make_review_services(tmp_path, provider)
+    submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+
+    receipt = reviews.generate_personalized_quiz(
+        profile_id,
+        "l0_two_values",
+        CORRECT_SOURCE,
+        cloud_consent=False,
+    )
+    with pytest.raises(QuizRequiredError):
+        reviews.view_personalized_quiz(profile_id, "l0_two_values")
+
+    complete_authored_quiz(reviews, problems, profile_id)
+    public_quiz = reviews.view_personalized_quiz(profile_id, "l0_two_values")
+
+    assert public_quiz is not None
+    assert public_quiz.quiz_set_id == receipt.quiz_set_id
+    assert len(public_quiz.questions) == 2
+    assert all(
+        not hasattr(question, "correct_option_id")
+        for question in public_quiz.questions
+    )
+    result = reviews.grade_personalized_quiz(
+        profile_id,
+        "l0_two_values",
+        public_quiz.quiz_set_id,
+        tuple(question.options[0].option_id for question in public_quiz.questions),
+    )
+    assert result.score == result.total == 2
+    assert provider.quiz_requests[0].source_code == CORRECT_SOURCE

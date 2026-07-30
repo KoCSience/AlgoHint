@@ -10,7 +10,9 @@ from algohint.domain.models import (
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
+    GeneratedPersonalizedQuiz,
     HintGenerationRequest,
+    PersonalizedQuizRequest,
     ProviderAvailability,
 )
 from algohint.infrastructure.code_review_prompt import (
@@ -22,6 +24,11 @@ from algohint.infrastructure.hint_prompt import (
     SYSTEM_INSTRUCTIONS,
     ProviderHintPayload,
     build_hint_prompt,
+)
+from algohint.infrastructure.personalized_quiz_prompt import (
+    PERSONALIZED_QUIZ_INSTRUCTIONS,
+    ProviderPersonalizedQuizPayload,
+    build_personalized_quiz_prompt,
 )
 
 
@@ -128,3 +135,44 @@ class OpenAIHintProvider:
                 exception_type=error.__class__.__name__,
             ) from error
         return payload.to_generated(provider="openai", model_name=self._model)
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz:
+        """Request code-aware questions with no tools, storage, or private judge data."""
+
+        try:
+            response = self._client().responses.create(
+                model=self._model,
+                instructions=PERSONALIZED_QUIZ_INSTRUCTIONS,
+                input=build_personalized_quiz_prompt(request),
+                reasoning={"effort": "low"},
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "algohint_personalized_quiz",
+                        "schema": ProviderPersonalizedQuizPayload.model_json_schema(),
+                        "strict": True,
+                    },
+                    "verbosity": "low",
+                },
+                max_output_tokens=1_800,
+                safety_identifier=request.learner_key,
+                store=False,
+            )
+            payload = ProviderPersonalizedQuizPayload.model_validate_json(
+                response.output_text
+            )
+            return payload.to_generated(
+                provider="openai",
+                model_name=self._model,
+                mode=request.mode,
+            )
+        except Exception as error:
+            raise HintProviderError(
+                reason_code=ProviderFailureReason.UNKNOWN_PROVIDER_ERROR,
+                provider="openai",
+                model=self._model,
+                exception_type=error.__class__.__name__,
+            ) from error

@@ -27,6 +27,8 @@ class ServerConfig:
     api_key: str = field(default="", repr=False)
     max_input_tokens: int = 8_192
     max_new_tokens: int = 600
+    review_max_new_tokens: int = 1_200
+    quiz_max_new_tokens: int = 1_800
     gpu_memory_gib: int = 14
     cpu_memory_gib: int = 64
     request_max_bytes: int = 98_304
@@ -51,6 +53,16 @@ class ServerConfig:
             ),
             max_new_tokens=_positive_int(
                 "ALGOHINT_GEMMA_MAX_NEW_TOKENS", cls.max_new_tokens, maximum=600
+            ),
+            review_max_new_tokens=_positive_int(
+                "ALGOHINT_GEMMA_REVIEW_MAX_NEW_TOKENS",
+                cls.review_max_new_tokens,
+                maximum=2_400,
+            ),
+            quiz_max_new_tokens=_positive_int(
+                "ALGOHINT_GEMMA_QUIZ_MAX_NEW_TOKENS",
+                cls.quiz_max_new_tokens,
+                maximum=4_096,
             ),
             gpu_memory_gib=_positive_int(
                 "ALGOHINT_GEMMA_GPU_MEMORY_GIB", cls.gpu_memory_gib, maximum=128

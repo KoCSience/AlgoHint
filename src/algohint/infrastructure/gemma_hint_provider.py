@@ -18,7 +18,9 @@ from algohint.domain.models import (
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
+    GeneratedPersonalizedQuiz,
     HintGenerationRequest,
+    PersonalizedQuizRequest,
     ProviderAvailability,
     ProviderDiagnostic,
 )
@@ -32,6 +34,11 @@ from algohint.infrastructure.hint_prompt import (
     SYSTEM_INSTRUCTIONS,
     ProviderHintPayload,
     build_hint_prompt,
+)
+from algohint.infrastructure.personalized_quiz_prompt import (
+    PERSONALIZED_QUIZ_INSTRUCTIONS,
+    ProviderPersonalizedQuizPayload,
+    build_personalized_quiz_prompt,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -193,6 +200,62 @@ class GemmaHintProvider:
                 "type": "json_schema",
                 "json_schema": {
                     "name": "algohint_code_review",
+                    "schema": schema,
+                    "strict": True,
+                },
+            },
+        }
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz:
+        """Request code-aware questions through the configured structured dialect."""
+
+        try:
+            with self._managed_client() as client:
+                response = client.chat.completions.create(
+                    **self._quiz_completion_arguments(request)
+                )
+                content = response.choices[0].message.content
+            if not isinstance(content, str):
+                raise ValueError("missing response content")
+            payload = ProviderPersonalizedQuizPayload.model_validate_json(content)
+            return payload.to_generated(
+                provider="gemma",
+                model_name=self._model,
+                mode=request.mode,
+            )
+        except Exception as error:
+            raise self._classified_error(error) from error
+
+    def _quiz_completion_arguments(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> dict[str, Any]:
+        """Keep quiz schema differences at the provider transport boundary."""
+
+        base: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": PERSONALIZED_QUIZ_INSTRUCTIONS},
+                {"role": "user", "content": build_personalized_quiz_prompt(request)},
+            ],
+        }
+        schema = ProviderPersonalizedQuizPayload.model_json_schema()
+        if self._backend is GemmaBackend.LLAMA_CPP:
+            return {
+                **base,
+                "max_tokens": 1_800,
+                "response_format": {"type": "json_schema", "schema": schema},
+            }
+        return {
+            **base,
+            "max_completion_tokens": 1_800,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "algohint_personalized_quiz",
                     "schema": schema,
                     "strict": True,
                 },

@@ -19,6 +19,8 @@ from algohint_gemma_server.contracts import (
     HintResponse,
     ModelInfo,
     ModelsResponse,
+    QuizRequest,
+    QuizResponse,
     ReviewRequest,
     ReviewResponse,
 )
@@ -129,6 +131,7 @@ def create_app(
                     hint_request.system_instructions,
                     hint_request.learner_context,
                     max_output_chars=1_200,
+                    max_new_tokens=resolved_config.max_new_tokens,
                 )
         except InputTooLongError as error:
             raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE) from error
@@ -179,6 +182,7 @@ def create_app(
                     review_request.system_instructions,
                     review_request.learner_context,
                     max_output_chars=4_000,
+                    max_new_tokens=resolved_config.review_max_new_tokens,
                 )
         except InputTooLongError as error:
             raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE) from error
@@ -203,5 +207,56 @@ def create_app(
             int((time.monotonic() - started) * 1_000),
         )
         return ReviewResponse(model=resolved_config.model_id, text=text)
+
+    @app.post("/v1/quizzes", response_model=QuizResponse)
+    async def quizzes(
+        quiz_request: QuizRequest,
+        authorization: str | None = Header(default=None),
+    ) -> QuizResponse:
+        """Generate bounded personalized-quiz JSON under the shared generation lock."""
+
+        authorize(authorization)
+        if quiz_request.model != resolved_config.model_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        runtime: HintRuntime = app.state.runtime
+        if not runtime.ready:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        generation_lock: asyncio.Lock = app.state.generation_lock
+        if generation_lock.locked():
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+        request_id = uuid.uuid4().hex
+        started = time.monotonic()
+        try:
+            async with generation_lock:
+                text = await asyncio.to_thread(
+                    runtime.generate,
+                    quiz_request.system_instructions,
+                    quiz_request.learner_context,
+                    max_output_chars=8_000,
+                    max_new_tokens=resolved_config.quiz_max_new_tokens,
+                )
+        except InputTooLongError as error:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE) from error
+        except InvalidModelOutputError as error:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY) from error
+        except ModelNotReadyError as error:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE) from error
+        except (RuntimeError, MemoryError) as error:
+            LOGGER.error(
+                "gemma_quiz_failed provider=gemma backend=transformers "
+                "model=%s request_id=%s exception_type=%s",
+                resolved_config.model_id,
+                request_id,
+                error.__class__.__name__,
+            )
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE) from error
+        LOGGER.info(
+            "gemma_quiz_complete provider=gemma backend=transformers "
+            "model=%s request_id=%s elapsed_ms=%d",
+            resolved_config.model_id,
+            request_id,
+            int((time.monotonic() - started) * 1_000),
+        )
+        return QuizResponse(model=resolved_config.model_id, text=text)
 
     return app

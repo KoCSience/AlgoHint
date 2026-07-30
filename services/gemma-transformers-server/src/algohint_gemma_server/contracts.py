@@ -55,3 +55,14 @@ class ReviewResponse(FrozenContract):
 
     model: str
     text: str = Field(min_length=1, max_length=4_000)
+
+
+class QuizRequest(HintRequest):
+    """Personalized quiz generation uses the same bounded private transport."""
+
+
+class QuizResponse(FrozenContract):
+    """Structured personalized-quiz JSON validated again by AlgoHint."""
+
+    model: str
+    text: str = Field(min_length=1, max_length=8_000)
