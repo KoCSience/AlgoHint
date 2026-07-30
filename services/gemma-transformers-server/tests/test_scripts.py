@@ -33,6 +33,15 @@ fi
 
 def _environment(tmp_path: Path, fake_bin: Path, calls: Path) -> dict[str, str]:
     app_root = tmp_path / "gemma"
+    uvicorn = app_root / ".venv" / "bin" / "uvicorn"
+    uvicorn.parent.mkdir(parents=True)
+    uvicorn.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    uvicorn.chmod(0o755)
+    credentials = tmp_path / "gemma-credentials"
+    credentials.write_text(
+        "ALGOHINT_GEMMA_API_KEY='test-only-api-key-that-is-long-enough'\n",
+        encoding="utf-8",
+    )
     return {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
@@ -40,6 +49,7 @@ def _environment(tmp_path: Path, fake_bin: Path, calls: Path) -> dict[str, str]:
         "ALGOHINT_GEMMA_APP_ROOT": str(app_root),
         "ALGOHINT_GEMMA_CODE_ROOT": str(SERVICE_ROOT),
         "ALGOHINT_GEMMA_STATE_DIR": str(app_root / "state"),
+        "ALGOHINT_GEMMA_CREDENTIALS": str(credentials),
         "ALGOHINT_GEMMA_LOG_MAX_BYTES": "1024",
         "ALGOHINT_GEMMA_LOG_GENERATIONS": "2",
     }

@@ -44,13 +44,28 @@ docker compose down
 ## ホストで起動
 
 ```bash
-uv run algohint
+./scripts/run-algohint.sh
 ```
 
 キーはリポジトリへ置かず、ホーム配下で管理して起動シェルの環境変数へ読み込ませます。
 アプリが受け取る変数と安全な管理例は
 [開発ガイド](docs/development.md#llm設定と秘密情報)を参照してください。キーがない場合も
 アプリは起動し、固定のRuleBasedヒントへ安全に退避します。
+
+同一ホストのGemma Serverもまとめて起動する場合は次を使います。終了時はこのスクリプトが
+新しく起動したGemmaだけを停止します。継続する場合は`--keep-gemma`を付けます。
+
+```bash
+./scripts/run-local-stack.sh
+```
+
+別ホストのGemma、SSHトンネル、ローカルAlgoHintをまとめて起動する場合は、SSH設定名を
+環境変数で渡します。終了後も新規起動したリモートGemmaを維持する場合は`--keep-remote`を
+付けます。
+
+```bash
+ALGOHINT_SSH_TARGET='gpu-learning-host' ./scripts/run-ssh-stack.sh
+```
 
 vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
 構築する場合は、[Gemmaサーバー導入・運用ガイド](docs/gemma-server.md)を参照してください。
@@ -60,7 +75,7 @@ Geminiの接続、キー、権限、モデル到達性だけを確認する場�
 コードを送らない診断コマンドを使用できます。
 
 ```bash
-uv run algohint doctor --provider gemini
+./scripts/run-algohint.sh doctor --provider gemini
 ```
 
 開発中にSDKの例外メッセージとスタックトレースまで確認する場合は、認証情報を

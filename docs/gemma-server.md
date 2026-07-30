@@ -1,8 +1,8 @@
 # Gemma 4 12B Transformersサーバー
 
 AlgoHintからGemma 4 12Bを使うための、専用推論サーバーの導入・運用手順です。
-vLLM、TGI、Docker、root権限、公開ポートは必要ありません。`143-home`の
-`saeki`ユーザーのホーム配下へ、uv、PyTorch、Hugging Face Transformersで構築します。
+vLLM、TGI、Docker、root権限、公開ポートは必要ありません。任意のLinuxアカウントの
+ホーム配下へ、uv、PyTorch、Hugging Face Transformersで構築します。
 
 AlgoHint本体とモデル推論を別プロセスにするのは、約12Bパラメータのモデル依存と
 GPU資源をUIから分離し、障害時にもRuleBasedヒントへ安全に退避できるようにするためです。
@@ -14,8 +14,8 @@ FastAPIがJSON APIを担当し、モデルにはJSON生成を要求しません�
 
 | 項目 | 値 |
 |---|---|
-| 接続先 | SSH設定名 `143-home` |
-| 実行ユーザー | `saeki` |
+| 接続先 | `ALGOHINT_SSH_TARGET`で指定するSSH設定名 |
+| 実行ユーザー | SSH接続先のログインユーザー |
 | Python | 3.10以上 |
 | uv | `0.11.25`以上 |
 | GPU | NVIDIA RTX A4000 16 GiB × 3 |
@@ -59,7 +59,7 @@ movingな`main`を直接使わず、再起動時に重みや設定が無断で�
 ## ホーム配下の構造
 
 ```text
-/home/saeki/
+$HOME/
 ├── .config/algohint-gemma-server/
 │   └── credentials               # 600、Git管理外
 └── programs/algohint-gemma-server/
@@ -81,18 +81,20 @@ movingな`main`を直接使わず、再起動時に重みや設定が無断で�
 WSL側のAlgoHintリポジトリで、現在コミットのサーバーだけをアーカイブします。
 
 ```bash
-cd /home/user/School/AlgoHint
+project_root="$(git rev-parse --show-toplevel)"
+cd "$project_root"
 release_id="$(git rev-parse --short=12 HEAD)"
 git archive --format=tar.gz \
   --output="/tmp/algohint-gemma-server-${release_id}.tar.gz" \
   HEAD:services/gemma-transformers-server
-scp "/tmp/algohint-gemma-server-${release_id}.tar.gz" 143-home:/tmp/
+target="${ALGOHINT_SSH_TARGET:?SSH設定名を指定してください}"
+scp "/tmp/algohint-gemma-server-${release_id}.tar.gz" "$target:/tmp/"
 ```
 
-`143-home`へ接続し、saekiのホーム配下へ展開します。
+SSH接続先のログインユーザーのホーム配下へ展開します。
 
 ```bash
-ssh 143-home
+ssh "$ALGOHINT_SSH_TARGET"
 app_root="$HOME/programs/algohint-gemma-server"
 release_id='<WSL側で表示した12桁のコミットID>'
 
@@ -110,7 +112,7 @@ ln -sfn "$app_root/releases/$release_id" "$app_root/current"
 ```
 
 依存をロックファイルどおりに同期します。login shellのPATHに依存しないよう、
-saeki環境で確認済みのuvを絶対パスで使います。
+接続先アカウントのuvを絶対パスで指定します。
 
 ```bash
 app_root="$HOME/programs/algohint-gemma-server"
@@ -148,10 +150,11 @@ AlgoHintを動かすWSLへ同じキーを安全にコピーします。内容を
 
 ```bash
 install -d -m 700 "$HOME/.config/algohint"
-scp 143-home:/home/saeki/.config/algohint-gemma-server/credentials \
-  "$HOME/.config/algohint/gemma-143-home-credentials"
-chmod 600 "$HOME/.config/algohint/gemma-143-home-credentials"
-bash -n "$HOME/.config/algohint/gemma-143-home-credentials"
+target="${ALGOHINT_SSH_TARGET:?SSH設定名を指定してください}"
+scp "$target:.config/algohint-gemma-server/credentials" \
+  "$HOME/.config/algohint/gemma-remote-credentials"
+chmod 600 "$HOME/.config/algohint/gemma-remote-credentials"
+bash -n "$HOME/.config/algohint/gemma-remote-credentials"
 ```
 
 このファイルは利用者が管理します。Codexへ調査を依頼する場合も、値の表示、
@@ -173,7 +176,7 @@ ALGOHINT_GEMMA_OFFLOAD_DIR="$app_root/runtime/offload" \
 ```
 
 モデルは固定revisionを明示してダウンロードします。Hugging Face側でモデル利用規約への
-同意が必要な場合は、saekiユーザーのHugging Faceトークンを別途設定してください。
+同意が必要な場合は、接続先ユーザーのHugging Faceトークンを別途設定してください。
 
 ```bash
 app_root="$HOME/programs/algohint-gemma-server"
@@ -245,35 +248,30 @@ print("Gemma server doctor: OK")
 
 ## WSLから接続
 
-WSLの専用ターミナル1でSSHトンネルを維持します。
+ローカルのAlgoHint credentialsを
+`$HOME/.config/algohint/credentials`（または`$ALGOHINT_CREDENTIALS`）へ用意し、
+Gemma用キーと接続設定を含めます。一括起動スクリプトはリモートGemma、
+SSHトンネル、ローカルAlgoHintを順に起動します。
 
 ```bash
-ssh -N -T \
-  -o ExitOnForwardFailure=yes \
-  -o ServerAliveInterval=30 \
-  -o ServerAliveCountMax=3 \
-  -L 127.0.0.1:18000:127.0.0.1:18080 \
-  143-home
+project_root="$(git rev-parse --show-toplevel)"
+cd "$project_root"
+export ALGOHINT_SSH_TARGET='gpu-learning-host'
+export ALGOHINT_SSH_LOCAL_PORT='18000'
+export ALGOHINT_SSH_REMOTE_PORT='18080'
+export ALGOHINT_SSH_STARTUP_TIMEOUT='300'
+export ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials"
+./scripts/run-ssh-stack.sh
 ```
 
-専用ターミナル2でGemma用credentialsだけを読み込み、AlgoHintを起動します。
+リモート配置先が既定の`$HOME/programs/algohint-gemma-server`と異なる場合は
+`ALGOHINT_SSH_REMOTE_APP_ROOT`で指定します。終了時はスクリプトが新規起動したリモート
+Gemmaだけを停止します。維持する場合は`./scripts/run-ssh-stack.sh --keep-remote`を
+使います。
 
-```bash
-cd /home/user/School/AlgoHint
-set -a
-. "$HOME/.config/algohint/gemma-143-home-credentials"
-set +a
-
-export ALGOHINT_ENV='development'
-export ALGOHINT_GEMMA_BACKEND='transformers_http'
-export ALGOHINT_GEMMA_DEPLOYMENT='remote'
-export ALGOHINT_GEMMA_BASE_URL='http://127.0.0.1:18000/v1'
-export ALGOHINT_GEMMA_MODEL='google/gemma-4-12B-it'
-export ALGOHINT_GEMMA_TIMEOUT_SECONDS='180'
-
-uv run algohint doctor --provider gemma
-uv run algohint
-```
+起動スクリプトは依存インストールやモデルダウンロードを行いません。AlgoHintは
+`uv sync --frozen`、Gemmaは前述の独立環境同期と固定revisionの`hf download`を事前に
+完了してください。不足時は起動に失敗し、必要な準備箇所を表示します。
 
 `remote`を明示するため、SSHトンネルのURLがループバックでもUIは外部送信の同意を
 要求します。ブラウザでGemmaを選択し、同意後に「わからない」を1回実行して、
@@ -318,7 +316,7 @@ WSL側のSSHトンネルは専用ターミナルで`Ctrl-C`を押して終了し
 | 症状 | 確認と対処 |
 |---|---|
 | `uv`が見つからない | `$HOME/.local/bin/uv --version`を使い、PATH依存を避ける |
-| Hugging Faceで401/403 | モデル利用規約、トークン、saekiユーザーの権限を確認する |
+| Hugging Faceで401/403 | モデル利用規約、トークン、接続先ユーザーの権限を確認する |
 | CUDA out of memory | 他プロセス、3枚のGPU空き、14 GiB/GPU上限、offload領域を確認する |
 | 起動が長時間継続する | `server-control.sh attach`で読込状態、ログ、GPUメモリ使用量を確認する |
 | AlgoHint doctorが接続拒否 | `server-control.sh status`、18080待受、SSHトンネル、18000競合を順に確認する |

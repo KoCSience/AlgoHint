@@ -90,6 +90,10 @@
 - [ ] `server-control.sh attach`で状態・GPU概要・追従ログが表示され、サーバー異常終了後もmonitorが残る。
 - [ ] `server-control.sh status`がtmux、検証済みPID、状態JSON、healthzの食い違いを警告する。
 - [ ] ログが設定上限で世代ローテーションし、`stop`が対象tmuxと検証済みPID以外を終了しない。
+- [ ] 3起動スクリプトが`bash -n`を通り、リポジトリ位置と`$HOME`から絶対パスを解決する。
+- [ ] local／SSH一括起動は自分が新規起動したGemmaだけを既定停止し、起動済みGemmaを停止しない。
+- [ ] `--keep-gemma`／`--keep-remote`、Ctrl+C、異常終了でも所有サービスとトンネルを仕様どおり処理する。
+- [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
 - [ ] Chrome MCPからGemmaへ「わからない」を1回だけ要求し、provider/modelと生成ヒントが表示され、RuleBasedへ退避しない。
 - [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。

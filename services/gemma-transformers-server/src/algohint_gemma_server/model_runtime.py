@@ -81,6 +81,7 @@ class TransformersGemmaRuntime:
         processor = AutoProcessor.from_pretrained(
             self._config.model_id,
             revision=self._config.model_revision,
+            local_files_only=True,
         )
         LOGGER.info(
             "gemma_processor_loaded model=%s revision=%s",
@@ -98,6 +99,7 @@ class TransformersGemmaRuntime:
         model = AutoModelForMultimodalLM.from_pretrained(
             self._config.model_id,
             revision=self._config.model_revision,
+            local_files_only=True,
             dtype=dtype,
             device_map="balanced",
             max_memory=self._config.max_memory(gpu_count),

@@ -129,6 +129,15 @@ OPENAI_API_KEY = '<APIキー>'
 
 ### 起動シェルへの読み込み
 
+通常はリポジトリ位置を自動解決する起動スクリプトを使います。credentialsの場所は
+`ALGOHINT_CREDENTIALS`で変更できます。
+
+```bash
+./scripts/run-algohint.sh
+```
+
+スクリプトを使わず手動で起動する場合は、次のように明示的に読み込みます。
+
 次のように読み込んでから、同じシェルでAlgoHintを起動します。
 
 ```bash
@@ -211,7 +220,7 @@ Geminiアダプタは、生成応答の`text`取得またはdoctorのモデル�
 ### Gemma接続診断
 
 vLLMが導入できないLinuxホストでは、PyTorch／Hugging Face Transformers版の専用
-FastAPIサーバーを利用できます。saekiのホーム配下への配置、認証キー作成、
+FastAPIサーバーを利用できます。利用者のホーム配下への配置、認証キー作成、
 固定revisionのモデル取得、SSHトンネル、起動・停止・ロールバックは
 [Gemmaサーバー導入・運用ガイド](gemma-server.md)を参照してください。
 
@@ -221,6 +230,11 @@ SSHトンネルとGemmaサーバーを起動し、Gemma用credentialsを読み�
 ```bash
 uv run algohint doctor --provider gemma
 ```
+
+同一ホストでは`./scripts/run-local-stack.sh`、別ホストでは
+`ALGOHINT_SSH_TARGET='<SSH設定名>' ./scripts/run-ssh-stack.sh`を使うと、
+Gemma、トンネル、AlgoHintを順に起動できます。各スクリプトは自分が新規起動した
+Gemmaだけを終了時に停止します。
 
 doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
 成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を

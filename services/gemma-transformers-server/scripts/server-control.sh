@@ -12,9 +12,11 @@ state_dir="${ALGOHINT_GEMMA_STATE_DIR:-$app_root/state}"
 status_file="${ALGOHINT_GEMMA_STATUS_FILE:-$state_dir/status.json}"
 log_file="${ALGOHINT_GEMMA_LOG_FILE:-$state_dir/server.log}"
 pid_file="${ALGOHINT_GEMMA_PID_FILE:-$state_dir/server.pid}"
+credentials_path="${ALGOHINT_GEMMA_CREDENTIALS:-$HOME/.config/algohint-gemma-server/credentials}"
+server_port="${ALGOHINT_GEMMA_PORT:-18080}"
 control_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/server-control.sh"
 run_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/run-server.sh"
-health_url="http://127.0.0.1:${ALGOHINT_GEMMA_PORT:-18080}/healthz"
+health_url="http://127.0.0.1:$server_port/healthz"
 
 validated_integer() {
     local name="$1"
@@ -168,6 +170,16 @@ start_command() {
         echo "Gemma run script is not executable: $run_script" >&2
         exit 2
     fi
+    if [[ ! -r "$credentials_path" ]]; then
+        echo "Gemma credentials are missing or unreadable: $credentials_path" >&2
+        echo "Create the documented 0600 credentials file before starting." >&2
+        exit 2
+    fi
+    if [[ ! -x "$app_root/.venv/bin/uvicorn" ]]; then
+        echo "Gemma dependencies are not installed at $app_root/.venv." >&2
+        echo "Run the documented frozen uv sync before starting." >&2
+        exit 2
+    fi
 
     install -d -m 700 "$state_dir"
     rotate_log
@@ -178,9 +190,9 @@ start_command() {
     printf -v monitor_shell '%q ' "$control_script" "__monitor"
     printf -v logs_shell '%q ' "$control_script" "logs" "--follow"
     printf -v server_shell \
-        'sleep 1; exec env ALGOHINT_GEMMA_APP_ROOT=%q ALGOHINT_GEMMA_CODE_ROOT=%q ALGOHINT_GEMMA_STATE_DIR=%q ALGOHINT_GEMMA_STATUS_FILE=%q ALGOHINT_GEMMA_LOG_FILE=%q ALGOHINT_GEMMA_PID_FILE=%q %q' \
+        'sleep 1; exec env ALGOHINT_GEMMA_APP_ROOT=%q ALGOHINT_GEMMA_CODE_ROOT=%q ALGOHINT_GEMMA_STATE_DIR=%q ALGOHINT_GEMMA_STATUS_FILE=%q ALGOHINT_GEMMA_LOG_FILE=%q ALGOHINT_GEMMA_PID_FILE=%q ALGOHINT_GEMMA_CREDENTIALS=%q ALGOHINT_GEMMA_PORT=%q %q' \
         "$app_root" "$code_root" "$state_dir" "$status_file" "$log_file" \
-        "$pid_file" "$run_script"
+        "$pid_file" "$credentials_path" "$server_port" "$run_script"
     printf -v pipe_shell 'exec cat >> %q' "$log_file"
 
     tmux new-session -d -s "$session_name" -n monitor "$monitor_shell"
