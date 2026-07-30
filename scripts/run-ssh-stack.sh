@@ -63,6 +63,13 @@ else
 fi
 remote_control="${ALGOHINT_SSH_REMOTE_CONTROL:-$remote_app_root/current/scripts/server-control.sh}"
 remote_code_root="${ALGOHINT_SSH_REMOTE_CODE_ROOT:-$remote_app_root/current}"
+for remote_path_name in remote_app_root remote_control remote_code_root; do
+    remote_path="${!remote_path_name}"
+    if [[ -z "$remote_path" || "$remote_path" == *$'\n'* ]]; then
+        echo "$remote_path_name must be one non-empty remote path without newlines." >&2
+        exit 2
+    fi
+done
 quoted_control="$(quote_remote "$remote_control")"
 
 remote_control_command() {
@@ -70,6 +77,26 @@ remote_control_command() {
     ssh -T "$ssh_target" \
         "ALGOHINT_GEMMA_APP_ROOT=$(quote_remote "$remote_app_root") ALGOHINT_GEMMA_CODE_ROOT=$(quote_remote "$remote_code_root") $quoted_control $(quote_remote "$action")"
 }
+
+# Distinguish an incomplete remote installation from a controller or model
+# failure before starting any process that this launcher would then own.
+if ssh -T "$ssh_target" "test -x $quoted_control"; then
+    :
+else
+    control_check_exit=$?
+    if ((control_check_exit == 255)); then
+        echo "Could not verify the remote Gemma Server control script over SSH." >&2
+        echo "Target: $ssh_target" >&2
+    else
+        echo "Remote Gemma Server control script is missing or not executable." >&2
+        echo "Target: $ssh_target" >&2
+        echo "Expected path: $remote_control" >&2
+        echo "Complete the standalone Gemma Server setup before using this launcher:" >&2
+        echo "https://github.com/KoCSience/AlgoHint-Gemma-Server" >&2
+        echo "If it is installed elsewhere, set ALGOHINT_SSH_REMOTE_APP_ROOT." >&2
+    fi
+    exit 2
+fi
 
 wait_for_tunnel() {
     local health_url="http://127.0.0.1:$local_port/healthz"

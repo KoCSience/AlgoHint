@@ -220,6 +220,8 @@ printf 'app backend=%s deployment=%s base=%s\\n' \
 printf 'ssh %s\\n' "$*" >>"$FAKE_CALLS"
 if [[ "$*" == *'printf \"%s\\n\" \"$HOME\"'* ]]; then
     echo '/remote/learner'
+elif [[ "$*" == *'test -x '* ]]; then
+    exit "${FAKE_CONTROL_CHECK_EXIT:-0}"
 elif [[ "$*" == *\"'status'\"* ]]; then
     if [[ "${FAKE_REMOTE_RUNNING:-0}" == "1" ]]; then
         echo 'process: running (pid=34, validated)'
@@ -266,6 +268,91 @@ def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None
     assert "'stop'" in recorded
     assert "deployment=remote" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
+
+
+def test_ssh_stack_fails_before_start_when_remote_control_is_missing(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    environment["FAKE_CONTROL_CHECK_EXIT"] = "1"
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "control script is missing or not executable" in result.stderr
+    assert (
+        "/remote/learner/programs/algohint-gemma-server/current/"
+        "scripts/server-control.sh"
+    ) in result.stderr
+    assert "https://github.com/KoCSience/AlgoHint-Gemma-Server" in result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "'status'" not in recorded
+    assert "'start'" not in recorded
+    assert " -N -T " not in f" {recorded} "
+    assert "app " not in recorded
+
+
+def test_ssh_stack_reports_control_probe_transport_failure(tmp_path: Path) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    environment["FAKE_CONTROL_CHECK_EXIT"] = "255"
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "Could not verify" in result.stderr
+    assert "Target: gpu-learning-host" in result.stderr
+    assert "Expected path:" not in result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "'status'" not in recorded
+    assert "'start'" not in recorded
+    assert " -N -T " not in f" {recorded} "
+    assert "app " not in recorded
+
+
+def test_ssh_stack_rejects_unsafe_remote_path_overrides(tmp_path: Path) -> None:
+    overrides = {
+        "ALGOHINT_SSH_REMOTE_APP_ROOT": "remote_app_root",
+        "ALGOHINT_SSH_REMOTE_CONTROL": "remote_control",
+        "ALGOHINT_SSH_REMOTE_CODE_ROOT": "remote_code_root",
+    }
+
+    for environment_name, shell_name in overrides.items():
+        case_root = tmp_path / environment_name.lower()
+        case_root.mkdir()
+        environment, calls = _ssh_environment(case_root)
+        environment[environment_name] = "/remote/valid\ninjected"
+
+        result = subprocess.run(
+            [str(SCRIPTS / "run-ssh-stack.sh")],
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode == 2
+        assert f"{shell_name} must be one non-empty remote path" in result.stderr
+        recorded = calls.read_text(encoding="utf-8") if calls.exists() else ""
+        assert "test -x" not in recorded
+        assert "'status'" not in recorded
+        assert "'start'" not in recorded
+        assert " -N -T " not in f" {recorded} "
+        assert "app " not in recorded
 
 
 def test_ssh_keep_flag_preserves_new_remote(tmp_path: Path) -> None:
