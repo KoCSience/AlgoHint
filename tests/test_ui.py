@@ -96,3 +96,12 @@ def test_client_lifecycle_fallback_notice_is_actionable() -> None:
     assert "内部クライアント" in notice
     assert "更新または再起動" in notice
     assert "RuleBased" in notice
+
+
+def test_endpoint_unreachable_notice_points_to_managed_diagnosis() -> None:
+    notice = _format_fallback_notice("endpoint_unreachable")
+
+    assert "Gemma Server" in notice
+    assert "SSH tunnel" in notice
+    assert "doctor" in notice
+    assert "RuleBased" in notice

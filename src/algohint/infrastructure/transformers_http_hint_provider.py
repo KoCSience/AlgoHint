@@ -318,6 +318,13 @@ class TransformersHttpHintProvider:
         return ProviderDiagnostic(healthy=True, provider="gemma", model=self._model)
 
     def _classified_error(self, error: Exception) -> HintProviderError:
+        """Separate connection-path failures from HTTP service responses.
+
+        A refused TCP connection or failed SSH forwarding needs operator action
+        on the endpoint path. It must not be presented as an upstream 5xx that
+        could reasonably recover by waiting.
+        """
+
         if isinstance(error, httpx.HTTPStatusError):
             status_code = error.response.status_code
             reason_code, retryable = self._classify_http_status(status_code)
@@ -332,6 +339,12 @@ class TransformersHttpHintProvider:
         if isinstance(error, (httpx.TimeoutException, TimeoutError)):
             return self._response_error(
                 ProviderFailureReason.TIMEOUT,
+                error,
+                retryable=True,
+            )
+        if isinstance(error, httpx.ConnectError):
+            return self._response_error(
+                ProviderFailureReason.ENDPOINT_UNREACHABLE,
                 error,
                 retryable=True,
             )

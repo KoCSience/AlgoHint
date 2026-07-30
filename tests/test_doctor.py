@@ -4,7 +4,9 @@ import pytest
 from google.genai.errors import ClientError
 
 from algohint import cli
-from algohint.cli import _parser, _run_gemini_doctor
+from algohint.cli import _parser, _run_gemini_doctor, _run_provider_doctor
+from algohint.domain.enums import ProviderFailureReason
+from algohint.domain.models import ProviderDiagnostic
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 
 
@@ -20,6 +22,16 @@ class DoctorModels:
         if self.error is not None:
             raise self.error
         return SimpleNamespace(name=kwargs["model"])
+
+
+class FixedDiagnosticProvider:
+    """Return one prebuilt diagnostic without opening a network connection."""
+
+    def __init__(self, diagnostic: ProviderDiagnostic) -> None:
+        self._diagnostic = diagnostic
+
+    def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
+        return self._diagnostic
 
 
 def test_doctor_parser_requires_supported_provider() -> None:
@@ -79,6 +91,29 @@ def test_gemini_doctor_reports_safe_failure(
     assert "http_status=404" in output
     assert "private-key-marker" not in output
     assert "raw-response-marker" not in output
+
+
+def test_gemma_doctor_reports_endpoint_recovery_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    provider = FixedDiagnosticProvider(
+        ProviderDiagnostic(
+            healthy=False,
+            provider="gemma",
+            model="google/gemma-4-12B-it",
+            reason_code=ProviderFailureReason.ENDPOINT_UNREACHABLE,
+            retryable=True,
+            exception_type="ConnectError",
+        )
+    )
+
+    status = _run_provider_doctor("Gemma", provider)
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "reason_code=endpoint_unreachable" in output
+    assert "run-ssh-stack.sh" in output
+    assert "run-local-stack.sh" in output
 
 
 def test_gemini_doctor_verbose_shows_redacted_development_traceback(

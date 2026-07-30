@@ -383,6 +383,43 @@ def test_invalid_response_is_classified_without_exposing_content(
     assert "private-invalid-response" not in str(raised.value)
 
 
+def test_connect_error_is_classified_as_unreachable_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("private-network-detail", request=request)
+
+    provider, _ = provider_with_handler(handler)
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is ProviderFailureReason.ENDPOINT_UNREACHABLE
+    assert raised.value.retryable
+    assert raised.value.exception_type == "ConnectError"
+    assert "private-network-detail" not in str(raised.value)
+
+
+def test_non_connect_transport_error_remains_provider_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("private-transport-detail", request=request)
+
+    provider, _ = provider_with_handler(handler)
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is ProviderFailureReason.PROVIDER_UNAVAILABLE
+    assert raised.value.retryable
+    assert "private-transport-detail" not in str(raised.value)
+
+
 def test_development_traceback_redacts_key_and_omits_prompt(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

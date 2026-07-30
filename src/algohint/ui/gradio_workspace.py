@@ -76,6 +76,10 @@ FALLBACK_NOTICES = {
     ProviderFailureReason.TIMEOUT.value: (
         "モデルへの接続がタイムアウトしました。ネットワークを確認して再試行してください。"
     ),
+    ProviderFailureReason.ENDPOINT_UNREACHABLE.value: (
+        "Gemma ServerまたはSSH tunnelへ接続できません。"
+        "管理用launcherからdoctor診断を実行してください。"
+    ),
     ProviderFailureReason.PROVIDER_UNAVAILABLE.value: (
         "モデルが一時的に利用できません。時間を置いて再試行してください。"
     ),

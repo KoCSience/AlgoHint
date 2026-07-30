@@ -77,6 +77,7 @@ class ProviderFailureReason(StrEnum):
     MODEL_NOT_FOUND = "model_not_found"
     RATE_OR_QUOTA_EXCEEDED = "rate_or_quota_exceeded"
     TIMEOUT = "timeout"
+    ENDPOINT_UNREACHABLE = "endpoint_unreachable"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     EMPTY_OR_BLOCKED_RESPONSE = "empty_or_blocked_response"
     INVALID_STRUCTURED_RESPONSE = "invalid_structured_response"

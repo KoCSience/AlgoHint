@@ -20,7 +20,11 @@ from algohint.application.research_evaluation_service import (
 )
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
-from algohint.domain.enums import GemmaBackend, HintProviderId
+from algohint.domain.enums import (
+    GemmaBackend,
+    HintProviderId,
+    ProviderFailureReason,
+)
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.hint_provider_factory import build_hint_providers
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
@@ -149,6 +153,19 @@ class _DiagnosableProvider(Protocol):
     def diagnose(self, *, verbose: bool = False): ...
 
 
+def _print_doctor_remediation(label: str, reason_code: object) -> None:
+    """Print only stable, secret-free recovery guidance for known failures."""
+
+    if (
+        label == "Gemma"
+        and reason_code is ProviderFailureReason.ENDPOINT_UNREACHABLE
+    ):
+        print(
+            "Gemma診断の対処: Remoteはrun-ssh-stack.sh、Localは"
+            "run-local-stack.shから再診断し、Serverと接続経路を確認してください。"
+        )
+
+
 def _run_provider_doctor(
     label: str,
     provider: _DiagnosableProvider,
@@ -176,6 +193,7 @@ def _run_provider_doctor(
         f"retryable={str(diagnostic.retryable).lower()} "
         f"exception_type={exception_type}"
     )
+    _print_doctor_remediation(label, diagnostic.reason_code)
     if verbose and not development_mode:
         print("詳細診断はdevelopmentでのみ有効です。ALGOHINT_ENV=developmentを設定してください。")
     elif diagnostic.debug_details is not None:
