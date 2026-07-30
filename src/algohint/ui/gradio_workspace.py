@@ -1,8 +1,8 @@
 """Contextual Gradio workspace for execution, diagnostics, tutoring, and explanation."""
 
 import time
-from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 import gradio as gr
@@ -11,14 +11,17 @@ from algohint.application.dto import LearnerDiagnostic
 from algohint.application.completion_review_service import (
     CodeReviewUnavailableError,
     CompletionRequiredError,
+    PersonalizedQuizUnavailableError,
     QuizRequiredError,
     ReviewConsentRequiredError,
 )
 from algohint.application.tutor_service import CloudConsentRequiredError
 from algohint.domain.enums import (
+    CompletionReason,
     HintProviderId,
     HintTrigger,
     JudgeStatus,
+    PersonalizedQuizMode,
     ProviderFailureReason,
     SubmissionMode,
     TutorRole,
@@ -42,6 +45,10 @@ PROVIDER_CHOICES = [
     ("Gemini", HintProviderId.GEMINI.value),
 ]
 PROVIDER_LABELS = {provider_id: label for label, provider_id in PROVIDER_CHOICES}
+QUIZ_MODE_CHOICES = [
+    ("AIが2〜5問を判断", PersonalizedQuizMode.ADAPTIVE_2_TO_5.value),
+    ("3問固定", PersonalizedQuizMode.FIXED_3.value),
+]
 FALLBACK_NOTICES = {
     ProviderFailureReason.NOT_CONFIGURED.value: (
         "モデルの接続設定がありません。環境変数を確認してください。"
@@ -98,6 +105,24 @@ QUESTION_SHORTCUT_SCRIPT = """
     childList: true,
     subtree: true,
   });
+}
+""".strip()
+OPEN_COMPLETION_TAB_SCRIPT = """
+() => {
+  let attempts = 0;
+  const selectWhenEnabled = () => {
+    attempts += 1;
+    const completionTab = Array.from(document.querySelectorAll('[role="tab"]'))
+      .find((tab) => tab.textContent?.includes('完了後の小テスト'));
+    const disabled = completionTab?.getAttribute('aria-disabled') === 'true'
+      || completionTab?.hasAttribute('disabled');
+    if (completionTab instanceof HTMLElement && !disabled) {
+      completionTab.click();
+      return;
+    }
+    if (attempts < 30) window.setTimeout(selectWhenEnabled, 100);
+  };
+  selectWhenEnabled();
 }
 """.strip()
 
@@ -200,8 +225,8 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         and initial_problem_id is not None
         else None
     )
-    initial_code_review_history = (
-        services.reviews.code_review_history(
+    initial_personalized_quiz = (
+        services.reviews.view_personalized_quiz(
             default_profile.profile_id,
             initial_problem_id,
         )
@@ -215,6 +240,11 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         default_profile.preferences.hint_provider
         if default_profile is not None
         else HintProviderId.OPENAI
+    )
+    default_quiz_mode = (
+        default_profile.preferences.personalized_quiz_mode
+        if default_profile is not None
+        else PersonalizedQuizMode.ADAPTIVE_2_TO_5
     )
     safety_note = (
         "⚠️ 共有リンクでは任意コードが実行されます。信頼できる個人利用に限定してください。"
@@ -247,6 +277,13 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 scale=1,
                 elem_id="provider-selector",
             )
+            quiz_mode_selector = gr.Dropdown(
+                choices=QUIZ_MODE_CHOICES,
+                label="AI小テスト問題数",
+                value=default_quiz_mode.value,
+                scale=1,
+                elem_id="quiz-mode-selector",
+            )
         provider_status = gr.Markdown(
             _format_provider_status(
                 default_provider,
@@ -273,7 +310,8 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 elem_id="problem-selector",
             )
             latest_diagnostic = gr.State(value=None)
-            code_review_trigger = gr.State(value=False)
+            accepted_source = gr.State(value="")
+            personalized_quiz_trigger = gr.State(value=False)
             with gr.Row(equal_height=False):
                 with gr.Column(scale=6, min_width=360):
                     problem_header = gr.Markdown(initial_problem_header)
@@ -314,8 +352,8 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     cloud_consent = gr.Checkbox(
                         label=(
                             "公開問題、現在コード、質問、安全化した診断、会話履歴を"
-                            "選択中のクラウドモデルへ送信すること、および完了後レビュー文を"
-                            "ローカル履歴へ保存することに同意します"
+                            "選択中のクラウド／リモートモデルへ送信し、生成したAI小テスト・"
+                            "レビューをローカル履歴へ保存することに同意します"
                         ),
                         value=False,
                         elem_id="cloud-consent",
@@ -348,138 +386,206 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         elem_id="clear-tutor-history",
                     )
 
-                    gr.Markdown("## 解説")
-                    with gr.Row():
-                        show_explanation_button = gr.Button("解説を表示")
-                        give_up = gr.Button("ギブアップして解説を見る", variant="stop")
-                    explanation_result = gr.Markdown(
-                        "解説は固定小テストの採点後、ボタンを押すと表示されます。"
-                        if initial_review is not None
-                        else "ACまたはギブアップ後に利用できます。"
+                    gr.Markdown(
+                        "完了後の小テストは、全テストACまたはギブアップで解禁されます。",
+                        elem_id="completion-unlock-notice",
                     )
+                    give_up = gr.Button("ギブアップして小テストへ進む", variant="stop")
 
-                    gr.Markdown("## 完了後の復習小テスト")
-                    completion_status = gr.Markdown(
-                        "5問すべてに回答して、アルゴリズムと問題の捉え方を復習しましょう。"
-                        if initial_review is not None
-                        else "全テストACまたはギブアップ後に小テストを表示します。"
+        with gr.Tab(
+            "完了後の小テスト",
+            interactive=initial_review is not None,
+            id="completion-review",
+            elem_id="completion-review-tab",
+        ) as completion_tab:
+            completion_banner = gr.Markdown(
+                (
+                    "固定5問に回答してください。"
+                    if initial_review is not None
+                    else "全テストACまたはギブアップ後に利用できます。"
+                ),
+                elem_id="completion-banner",
+            )
+            completion_status = gr.Markdown(
+                (
+                    "固定5問の採点後に、解説とAIコード改善レビューを確認できます。"
+                    if initial_review is not None
+                    and not initial_review.authored_quiz_completed
+                    else "固定小テストは採点済みです。"
+                    if initial_review is not None
+                    else ""
+                )
+            )
+            gr.Markdown("## 固定5問")
+            quiz_radios: list[gr.Radio] = []
+            for index in range(5):
+                initial_question = (
+                    initial_quiz_questions[index]
+                    if index < len(initial_quiz_questions)
+                    else None
+                )
+                quiz_radios.append(
+                    gr.Radio(
+                        choices=[
+                            (option.text, option.option_id)
+                            for option in initial_question.options
+                        ]
+                        if initial_question is not None
+                        else [],
+                        label=(
+                            f"問{index + 1}: {initial_question.prompt}"
+                            if initial_question is not None
+                            else f"問{index + 1}"
+                        ),
+                        value=None,
+                        visible=initial_question is not None,
+                        elem_id=f"review-quiz-{index + 1}",
                     )
-                    quiz_radios: list[gr.Radio] = []
-                    for index in range(5):
-                        initial_question = (
-                            initial_quiz_questions[index]
-                            if index < len(initial_quiz_questions)
-                            else None
-                        )
-                        quiz_radios.append(
-                            gr.Radio(
-                                choices=[
-                                    (option.text, option.option_id)
-                                    for option in initial_question.options
-                                ]
-                                if initial_question is not None
-                                else [],
-                                label=(
-                                    f"問{index + 1}: {initial_question.prompt}"
-                                    if initial_question is not None
-                                    else f"問{index + 1}"
-                                ),
-                                value=None,
-                                visible=initial_question is not None,
-                                elem_id=f"review-quiz-{index + 1}",
-                            )
-                        )
-                    submit_quiz = gr.Button(
-                        "小テストを採点",
-                        variant="primary",
-                        visible=initial_review is not None,
-                        elem_id="submit-review-quiz",
-                    )
-                    quiz_result = gr.Markdown("", elem_id="review-quiz-result")
-                    review_quota = gr.Markdown(
-                        format_review_quota(initial_quiz_history)
-                        if initial_quiz_history is not None
-                        else "",
-                        elem_id="review-history-quota",
-                    )
-                    quiz_history = gr.Markdown(
-                        format_quiz_history(initial_quiz_history)
-                        if initial_quiz_history is not None
-                        else "",
-                        elem_id="review-quiz-history",
-                    )
-                    quiz_history_page = gr.State(value=0)
-                    with gr.Row():
-                        previous_quiz_history = gr.Button(
-                            "新しい履歴へ",
-                            visible=False,
-                            elem_id="previous-review-history",
-                        )
-                        next_quiz_history = gr.Button(
-                            "古い履歴へ",
-                            visible=(
-                                initial_quiz_history is not None
-                                and initial_quiz_history.total_count
-                                > initial_quiz_history.page_size
-                            ),
-                            elem_id="next-review-history",
-                        )
+                )
+            submit_quiz = gr.Button(
+                "固定小テストを採点",
+                variant="primary",
+                visible=initial_review is not None,
+                elem_id="submit-review-quiz",
+            )
+            quiz_result = gr.Markdown("", elem_id="review-quiz-result")
+            review_quota = gr.Markdown(
+                format_review_quota(initial_quiz_history)
+                if initial_quiz_history is not None
+                else "",
+                elem_id="review-history-quota",
+            )
+            quiz_history = gr.Markdown(
+                format_quiz_history(initial_quiz_history)
+                if initial_quiz_history is not None
+                else "",
+                elem_id="review-quiz-history",
+            )
+            quiz_history_page = gr.State(value=0)
+            with gr.Row():
+                previous_quiz_history = gr.Button(
+                    "新しい履歴へ",
+                    visible=False,
+                    elem_id="previous-review-history",
+                )
+                next_quiz_history = gr.Button(
+                    "古い履歴へ",
+                    visible=(
+                        initial_quiz_history is not None
+                        and initial_quiz_history.total_count
+                        > initial_quiz_history.page_size
+                    ),
+                    elem_id="next-review-history",
+                )
 
-                    gr.Markdown("## AIによるコード改善レビュー")
-                    code_review_status = gr.Markdown(
-                        (
-                            "完了済みです。現在コードをレビューするには再試行できます。"
-                            if initial_review is not None
-                            and initial_review.authored_quiz_completed
-                            else (
-                                "固定小テスト実施中は、AIコード改善レビューを確認できません。"
-                                if initial_review is not None
-                                else "全テストACまたはギブアップ後に利用できます。"
-                            )
+            gr.Markdown("## AIによるコード別小テスト")
+            personalized_quiz_status = gr.Markdown(
+                (
+                    "AI生成内容のため誤りを含む可能性があります。"
+                    if initial_personalized_quiz is not None
+                    else "全テストAC後にコードを確認して自動生成します。"
+                ),
+                elem_id="personalized-quiz-status",
+            )
+            personalized_quiz_set_id = gr.State(
+                value=(
+                    initial_personalized_quiz.quiz_set_id
+                    if initial_personalized_quiz is not None
+                    else ""
+                )
+            )
+            personalized_radios: list[gr.Radio] = []
+            for index in range(5):
+                initial_question = (
+                    initial_personalized_quiz.questions[index]
+                    if initial_personalized_quiz is not None
+                    and index < len(initial_personalized_quiz.questions)
+                    else None
+                )
+                personalized_radios.append(
+                    gr.Radio(
+                        choices=[
+                            (option.text, option.option_id)
+                            for option in initial_question.options
+                        ]
+                        if initial_question is not None
+                        else [],
+                        label=(
+                            f"AI問{index + 1}: {initial_question.prompt}"
+                            if initial_question is not None
+                            else f"AI問{index + 1}"
                         ),
-                        elem_id="code-review-status",
+                        visible=initial_question is not None,
+                        elem_id=f"personalized-quiz-{index + 1}",
                     )
-                    current_code_review = gr.Markdown(
-                        (
-                            format_code_review(initial_code_review_history.entries[0])
-                            if initial_code_review_history is not None
-                            and initial_code_review_history.entries
-                            else ""
-                        ),
-                        elem_id="current-code-review",
-                    )
-                    retry_code_review = gr.Button(
-                        "現在コードをAIレビュー",
-                        visible=(
-                            initial_review is not None
-                            and initial_review.authored_quiz_completed
-                        ),
-                        elem_id="retry-code-review",
-                    )
-                    code_review_history = gr.Markdown(
-                        (
-                            format_code_review_history(initial_code_review_history)
-                            if initial_code_review_history is not None
-                            else ""
-                        ),
-                        elem_id="code-review-history",
-                    )
-                    code_review_history_page = gr.State(value=0)
-                    with gr.Row():
-                        previous_code_review_history = gr.Button(
-                            "新しいレビューへ",
-                            visible=False,
-                            elem_id="previous-code-review-history",
-                        )
-                        next_code_review_history = gr.Button(
-                            "古いレビューへ",
-                            visible=(
-                                initial_code_review_history is not None
-                                and initial_code_review_history.total_count
-                                > initial_code_review_history.page_size
-                            ),
-                            elem_id="next-code-review-history",
-                        )
+                )
+            grade_personalized_quiz = gr.Button(
+                "AI小テストを採点",
+                visible=initial_personalized_quiz is not None,
+                elem_id="grade-personalized-quiz",
+            )
+            regenerate_personalized_quiz = gr.Button(
+                "AI小テストを再生成",
+                visible=False,
+                elem_id="regenerate-personalized-quiz",
+            )
+            personalized_quiz_result = gr.Markdown(
+                "",
+                elem_id="personalized-quiz-result",
+            )
+
+            gr.Markdown("## 解説")
+            show_explanation_button = gr.Button(
+                "解説を表示",
+                interactive=(
+                    initial_review is not None
+                    and initial_review.authored_quiz_completed
+                ),
+                elem_id="show-explanation",
+            )
+            explanation_result = gr.Markdown("", elem_id="explanation-result")
+
+            gr.Markdown("## AIによるコード改善レビュー")
+            code_review_status = gr.Markdown(
+                (
+                    "ボタンを押すまでレビューは表示しません。"
+                    if initial_review is not None
+                    and initial_review.authored_quiz_completed
+                    else "固定小テスト実施中はレビューを確認できません。"
+                ),
+                elem_id="code-review-status",
+            )
+            with gr.Row():
+                show_saved_code_reviews = gr.Button(
+                    "保存済みAIレビューを表示",
+                    interactive=(
+                        initial_review is not None
+                        and initial_review.authored_quiz_completed
+                    ),
+                    elem_id="show-saved-code-reviews",
+                )
+                retry_code_review = gr.Button(
+                    "現在コードを新規AIレビュー",
+                    interactive=(
+                        initial_review is not None
+                        and initial_review.authored_quiz_completed
+                    ),
+                    elem_id="retry-code-review",
+                )
+            current_code_review = gr.Markdown("", elem_id="current-code-review")
+            code_review_history = gr.Markdown("", elem_id="code-review-history")
+            code_review_history_page = gr.State(value=0)
+            with gr.Row():
+                previous_code_review_history = gr.Button(
+                    "新しいレビューへ",
+                    visible=False,
+                    elem_id="previous-code-review-history",
+                )
+                next_code_review_history = gr.Button(
+                    "古いレビューへ",
+                    visible=False,
+                    elem_id="next-code-review-history",
+                )
 
         with gr.Tab("学習レポート"):
             refresh_report = gr.Button("レポートを更新")
@@ -525,6 +631,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return (
                     gr.Dropdown(),
                     gr.Dropdown(),
+                    gr.Dropdown(),
                     "プロフィール名を入力してください。",
                     "プロフィール名を入力してください。",
                     False,
@@ -557,6 +664,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             return (
                 gr.Dropdown(choices=choices, value=profile.profile_id),
                 gr.Dropdown(value=provider.value),
+                gr.Dropdown(value=profile.preferences.personalized_quiz_mode.value),
                 _format_provider_status(provider, services.tutor.provider_availability(provider)),
                 f"{profile.display_name} を選択しました。",
                 False,
@@ -573,6 +681,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             if not profile_id:
                 return (
                     gr.Dropdown(value=HintProviderId.OPENAI.value),
+                    gr.Dropdown(value=PersonalizedQuizMode.ADAPTIVE_2_TO_5.value),
                     "プロフィールを選択してください。",
                     gr.Dropdown(value=problem_id),
                     "問題を選択してください。",
@@ -605,6 +714,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     tutor_message += f"\n\n{selection.persistence_warning}"
             return (
                 gr.Dropdown(value=provider.value),
+                gr.Dropdown(value=profile.preferences.personalized_quiz_mode.value),
                 _format_provider_status(provider, services.tutor.provider_availability(provider)),
                 gr.Dropdown(value=selection.problem_id),
                 header,
@@ -626,6 +736,13 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 False,
             )
 
+        def selected_quiz_mode(profile_id: str | None, mode_name: str):
+            if not profile_id:
+                return gr.Dropdown(value=PersonalizedQuizMode.ADAPTIVE_2_TO_5.value)
+            mode = PersonalizedQuizMode(mode_name)
+            services.profiles.set_personalized_quiz_mode(profile_id, mode)
+            return gr.Dropdown(value=mode.value)
+
         def submit(
             profile_id: str | None,
             problem_id: str | None,
@@ -644,12 +761,12 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             problem_id: str | None,
             source: str,
         ):
-            """Return an explicit review trigger only for this accepted FULL source."""
+            """Return an AI-quiz trigger only for the first accepted FULL source."""
 
             if not profile_id or not problem_id:
-                return "プロフィールと問題を選択してください。", None, False
+                return "プロフィールと問題を選択してください。", None, False, ""
             if not source.strip():
-                return "提出するPythonコードを入力してください。", None, False
+                return "提出するPythonコードを入力してください。", None, False, ""
             result = services.submissions.submit(
                 profile_id,
                 problem_id,
@@ -659,7 +776,8 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             return (
                 format_submission(result),
                 result.diagnostic,
-                result.status is JudgeStatus.AC,
+                result.newly_completed,
+                source if result.status is JudgeStatus.AC else "",
             )
 
         def request_tutor_hint(
@@ -688,13 +806,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
 
             current = services.tutor.load_session(profile_id, problem_id)
             pending_messages = _format_tutor_session(current)
-            if trigger is HintTrigger.QUESTION and cleaned_question is not None:
-                # Keep the pending turn browser-only. Persistence remains an
-                # assistant/user pair so interrupted generations leave no orphan.
-                pending_messages = [
-                    *pending_messages,
-                    {"role": TutorRole.USER.value, "content": cleaned_question},
-                ]
+            # Keep every pending trigger browser-only. Persistence remains an
+            # assistant/user pair so interrupted generations leave no orphan.
+            pending_messages = [
+                *pending_messages,
+                {
+                    "role": TutorRole.USER.value,
+                    "content": services.tutor.user_message_text(
+                        trigger,
+                        cleaned_question,
+                    ),
+                },
+            ]
             started = time.monotonic()
             cleared_question = "" if trigger is HintTrigger.QUESTION else question_text
             yield (
@@ -832,11 +955,11 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             """Record give-up without revealing explanation or starting an AI review."""
 
             if not profile_id or not problem_id:
-                return "プロフィールと問題を選択してください。", False
-            newly_completed = services.completions.give_up(profile_id, problem_id)
+                return "プロフィールと問題を選択してください。", ""
+            services.completions.give_up(profile_id, problem_id)
             return (
                 "ギブアップを記録しました。固定小テストに進みましょう。",
-                newly_completed,
+                "",
             )
 
         def show_report(profile_id: str | None):
@@ -845,7 +968,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             return format_report(services.reports.report(profile_id))
 
         def load_completion(profile_id: str | None, problem_id: str | None):
-            """Synchronize explanation and answer-free quiz after selection changes."""
+            """Synchronize the completion tab without revealing gated material."""
 
             view = (
                 services.reviews.view(profile_id, problem_id)
@@ -854,14 +977,18 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             )
             if view is None:
                 return (
-                    "ACまたはギブアップ後に解説を表示できます。",
-                    "全テストACまたはギブアップ後に小テストを表示します。",
+                    gr.Tab(interactive=False),
+                    "全テストACまたはギブアップ後に利用できます。",
+                    "",
                     *[
                         gr.Radio(choices=[], value=None, visible=False)
                         for _ in range(5)
                     ],
                     gr.Button(visible=False),
                     "",
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
                 )
             updates = [
                 gr.Radio(
@@ -873,11 +1000,26 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 for index, question in enumerate(view.questions, start=1)
             ]
             return (
-                "解説は固定小テストの採点後、ボタンを押すと表示されます。",
-                "5問すべてに回答して、アルゴリズムと問題の捉え方を復習しましょう。",
+                gr.Tab(interactive=True),
+                (
+                    "🎉 AC、おめでとうございます！固定小テストを始めましょう。"
+                    if view.completion_reason is CompletionReason.FULL_AC
+                    else "ギブアップを記録しました。固定小テストに進みましょう。"
+                ),
+                (
+                    "固定小テストは採点済みです。"
+                    if view.authored_quiz_completed
+                    else (
+                        "固定5問の採点後に、解説とAIコード改善レビューを"
+                        "確認できます。"
+                    )
+                ),
                 *updates,
                 gr.Button(visible=True),
                 "",
+                gr.Button(interactive=view.authored_quiz_completed),
+                gr.Button(interactive=view.authored_quiz_completed),
+                gr.Button(interactive=view.authored_quiz_completed),
             )
 
         def grade_quiz(
@@ -893,6 +1035,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     0,
                     gr.Button(visible=False),
                     gr.Button(visible=False),
+                    "",
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
                 )
             try:
                 result = services.reviews.grade(
@@ -908,6 +1054,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     0,
                     gr.Button(visible=False),
                     gr.Button(visible=False),
+                    "固定5問すべてに回答してください。",
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
                 )
             history_page = services.reviews.quiz_history(profile_id, problem_id)
             return (
@@ -919,6 +1069,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 gr.Button(
                     visible=history_page.total_count > history_page.page_size
                 ),
+                "固定小テストを採点しました。解説とAIレビューを利用できます。",
+                gr.Button(interactive=True),
+                gr.Button(interactive=True),
+                gr.Button(interactive=True),
             )
 
         def change_quiz_history_page(
@@ -972,6 +1126,183 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 gr.Button(visible=page.total_count > page.page_size),
             )
 
+        def load_personalized_quiz(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+        ):
+            """Release generated questions only after the fixed quiz gate."""
+
+            hidden = [
+                gr.Radio(choices=[], value=None, visible=False)
+                for _ in range(5)
+            ]
+            if not profile_id or not problem_id:
+                return (
+                    "プロフィールと問題を選択してください。",
+                    "",
+                    *hidden,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+            try:
+                quiz = services.reviews.view_personalized_quiz(
+                    profile_id,
+                    problem_id,
+                )
+            except (CompletionRequiredError, QuizRequiredError) as error:
+                return (
+                    str(error),
+                    "",
+                    *hidden,
+                    gr.Button(visible=False),
+                    gr.Button(visible=bool(source)),
+                )
+            if quiz is None:
+                return (
+                    "AI小テストはまだありません。AC済みコードから再生成できます。",
+                    "",
+                    *hidden,
+                    gr.Button(visible=False),
+                    gr.Button(visible=bool(source)),
+                )
+            updates = [
+                gr.Radio(
+                    choices=[
+                        (option.text, option.option_id)
+                        for option in question.options
+                    ],
+                    label=f"AI問{index}: {question.prompt}",
+                    value=None,
+                    visible=True,
+                )
+                for index, question in enumerate(quiz.questions, start=1)
+            ]
+            updates.extend(
+                gr.Radio(choices=[], value=None, visible=False)
+                for _ in range(5 - len(updates))
+            )
+            return (
+                (
+                    f"{quiz.provider} / {quiz.model_name} が生成した"
+                    f"{len(quiz.questions)}問です。AI生成内容のため誤りを"
+                    "含む可能性があります。"
+                ),
+                quiz.quiz_set_id,
+                *updates,
+                gr.Button(visible=True),
+                gr.Button(visible=bool(source)),
+            )
+
+        def generate_personalized_quiz_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+            consent: bool,
+            should_generate: bool,
+        ) -> Iterator[tuple[Any, bool, Any]]:
+            """Generate in a separate event after the AC result is already visible."""
+
+            if not should_generate:
+                yield gr.skip(), False, gr.skip()
+                return
+            if not profile_id or not problem_id:
+                yield "プロフィールと問題を選択してください。", False, gr.Button(
+                    visible=False
+                )
+                return
+            started = time.monotonic()
+            yield "AI小テストを準備中…（経過時間: 0 s）", False, gr.Button(
+                visible=False
+            )
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                services.reviews.generate_personalized_quiz,
+                profile_id,
+                problem_id,
+                source,
+                cloud_consent=consent,
+            )
+            try:
+                elapsed_seconds = 0
+                while not future.done():
+                    time.sleep(1)
+                    current_elapsed = int(time.monotonic() - started)
+                    if current_elapsed > elapsed_seconds and not future.done():
+                        elapsed_seconds = current_elapsed
+                        yield (
+                            (
+                                "AI小テストを準備中…"
+                                f"（経過時間: {elapsed_seconds} s）"
+                            ),
+                            False,
+                            gr.Button(visible=False),
+                        )
+                receipt = future.result()
+            except (
+                CompletionRequiredError,
+                PersonalizedQuizUnavailableError,
+                ReviewConsentRequiredError,
+                ValueError,
+            ) as error:
+                yield (
+                    f"{error} 固定5問はそのまま回答できます。",
+                    False,
+                    gr.Button(visible=bool(source)),
+                )
+                return
+            finally:
+                executor.shutdown(wait=True)
+            elapsed = time.monotonic() - started
+            yield (
+                (
+                    f"AI小テスト{receipt.question_count}問を準備しました。"
+                    "固定5問の採点後に表示します。"
+                    f"（所要時間: {elapsed:.1f} s）"
+                ),
+                False,
+                gr.Button(visible=bool(source)),
+            )
+
+        def grade_personalized_quiz_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            quiz_set_id: str,
+            *answers: str | None,
+        ) -> str:
+            if not profile_id or not problem_id or not quiz_set_id:
+                return "AI小テストを読み込んでください。"
+            quiz = services.reviews.view_personalized_quiz(profile_id, problem_id)
+            if quiz is None:
+                return "AI小テストを読み込んでください。"
+            try:
+                result = services.reviews.grade_personalized_quiz(
+                    profile_id,
+                    problem_id,
+                    quiz_set_id,
+                    tuple(answers[: len(quiz.questions)]),
+                )
+            except (CompletionRequiredError, QuizRequiredError, ValueError) as error:
+                return str(error)
+            return (
+                format_quiz_result(result)
+                + "\n\nAI生成内容のため誤りを含む可能性があります。"
+            )
+
+        def retry_personalized_quiz_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+            consent: bool,
+        ) -> Iterator[tuple[Any, bool, Any]]:
+            yield from generate_personalized_quiz_ui(
+                profile_id,
+                problem_id,
+                source,
+                consent,
+                True,
+            )
+
         def load_code_review_state(
             profile_id: str | None,
             problem_id: str | None,
@@ -985,7 +1316,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return (
                     "",
                     "全テストACまたはギブアップ後に利用できます。",
-                    gr.Button(visible=False),
+                    gr.Button(interactive=False),
                     "",
                     0,
                     gr.Button(visible=False),
@@ -995,7 +1326,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return (
                     "",
                     "固定小テスト実施中は、AIコード改善レビューを確認できません。",
-                    gr.Button(visible=False),
+                    gr.Button(interactive=False),
                     "",
                     0,
                     gr.Button(visible=False),
@@ -1007,8 +1338,8 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             )
             return (
                 latest,
-                "完了済みです。現在コードをレビューするには再試行できます。",
-                gr.Button(visible=True),
+                "保存済みAIレビューを表示しました。",
+                gr.Button(interactive=True),
                 format_code_review_history(history),
                 0,
                 gr.Button(visible=False),
@@ -1052,29 +1383,15 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             problem_id: str | None,
             source: str,
             consent: bool,
-            should_generate: bool,
-        ) -> Iterator[tuple[Any, str, Any, Any, bool, int, Any, Any]]:
+        ) -> Iterator[tuple[Any, str, Any, Any, int, Any, Any]]:
             """Stream measured elapsed time while the completion review runs."""
 
-            if not should_generate:
-                yield (
-                    gr.skip(),
-                    gr.skip(),
-                    gr.skip(),
-                    gr.skip(),
-                    False,
-                    gr.skip(),
-                    gr.skip(),
-                    gr.skip(),
-                )
-                return
             if not profile_id or not problem_id:
                 yield (
                     "",
                     "プロフィールと問題を選択してください。",
                     "",
                     "",
-                    False,
                     0,
                     gr.Button(visible=False),
                     gr.Button(visible=False),
@@ -1086,7 +1403,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 "コードレビューを生成中…（経過時間: 0 s）",
                 gr.skip(),
                 gr.skip(),
-                False,
                 gr.skip(),
                 gr.skip(),
                 gr.skip(),
@@ -1114,7 +1430,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                             ),
                             gr.skip(),
                             gr.skip(),
-                            False,
                             gr.skip(),
                             gr.skip(),
                             gr.skip(),
@@ -1143,7 +1458,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     f"{error} 設定またはコードを確認して再試行できます。",
                     format_code_review_history(history) if history is not None else "",
                     format_review_quota(history) if history is not None else gr.skip(),
-                    False,
                     0,
                     gr.Button(visible=False),
                     gr.Button(
@@ -1163,7 +1477,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 f"コードレビューを表示しました。（所要時間: {elapsed:.1f} s）",
                 format_code_review_history(history),
                 format_review_quota(history),
-                False,
                 0,
                 gr.Button(visible=False),
                 gr.Button(visible=history.total_count > history.page_size),
@@ -1174,14 +1487,32 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             problem_id: str | None,
             source: str,
             consent: bool,
-        ) -> Iterator[tuple[Any, str, Any, Any, bool, int, Any, Any]]:
+        ) -> Iterator[tuple[Any, str, Any, Any, int, Any, Any]]:
             yield from generate_code_review_ui(
                 profile_id,
                 problem_id,
                 source,
                 consent,
-                True,
             )
+
+        completion_outputs = [
+            completion_tab,
+            completion_banner,
+            completion_status,
+            *quiz_radios,
+            submit_quiz,
+            quiz_result,
+            show_explanation_button,
+            show_saved_code_reviews,
+            retry_code_review,
+        ]
+        personalized_outputs = [
+            personalized_quiz_status,
+            personalized_quiz_set_id,
+            *personalized_radios,
+            grade_personalized_quiz,
+            regenerate_personalized_quiz,
+        ]
 
         problem_selection_event = problem_selector.change(
             selected_problem,
@@ -1199,13 +1530,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         problem_selection_event.then(
             load_completion,
             inputs=[profile_selector, problem_selector],
-            outputs=[
-                explanation_result,
-                completion_status,
-                *quiz_radios,
-                submit_quiz,
-                quiz_result,
-            ],
+            outputs=completion_outputs,
             api_visibility="private",
         )
         problem_selection_event.then(
@@ -1221,17 +1546,19 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             api_visibility="private",
         )
         problem_selection_event.then(
-            load_code_review_state,
-            inputs=[profile_selector, problem_selector],
+            lambda: ("", False, "", "", ""),
             outputs=[
+                accepted_source,
+                personalized_quiz_trigger,
+                explanation_result,
                 current_code_review,
-                code_review_status,
-                retry_code_review,
                 code_review_history,
-                code_review_history_page,
-                previous_code_review_history,
-                next_code_review_history,
             ],
+            api_visibility="private",
+        ).then(
+            load_personalized_quiz,
+            inputs=[profile_selector, problem_selector, accepted_source],
+            outputs=personalized_outputs,
             api_visibility="private",
         )
         create_profile.click(
@@ -1240,6 +1567,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=[
                 profile_selector,
                 provider_selector,
+                quiz_mode_selector,
                 provider_status,
                 report_result,
                 cloud_consent,
@@ -1258,6 +1586,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             inputs=[profile_selector, problem_selector],
             outputs=[
                 provider_selector,
+                quiz_mode_selector,
                 provider_status,
                 problem_selector,
                 problem_header,
@@ -1273,13 +1602,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         profile_selection_event.then(
             load_completion,
             inputs=[profile_selector, problem_selector],
-            outputs=[
-                explanation_result,
-                completion_status,
-                *quiz_radios,
-                submit_quiz,
-                quiz_result,
-            ],
+            outputs=completion_outputs,
             api_visibility="private",
         )
         profile_selection_event.then(
@@ -1295,17 +1618,19 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             api_visibility="private",
         )
         profile_selection_event.then(
-            load_code_review_state,
-            inputs=[profile_selector, problem_selector],
+            lambda: ("", False, "", "", ""),
             outputs=[
+                accepted_source,
+                personalized_quiz_trigger,
+                explanation_result,
                 current_code_review,
-                code_review_status,
-                retry_code_review,
                 code_review_history,
-                code_review_history_page,
-                previous_code_review_history,
-                next_code_review_history,
             ],
+            api_visibility="private",
+        ).then(
+            load_personalized_quiz,
+            inputs=[profile_selector, problem_selector, accepted_source],
+            outputs=personalized_outputs,
             api_visibility="private",
         )
         provider_selector.change(
@@ -1313,6 +1638,12 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             inputs=[profile_selector, provider_selector],
             outputs=[provider_status, cloud_consent],
             api_name="select_hint_provider",
+        )
+        quiz_mode_selector.change(
+            selected_quiz_mode,
+            inputs=[profile_selector, quiz_mode_selector],
+            outputs=quiz_mode_selector,
+            api_name="select_personalized_quiz_mode",
         )
         sample_submit.click(
             lambda profile, problem, source: submit(
@@ -1325,22 +1656,26 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         full_submission_event = full_submit.click(
             submit_full,
             inputs=[profile_selector, problem_selector, code],
-            outputs=[submission_result, latest_diagnostic, code_review_trigger],
+            outputs=[
+                submission_result,
+                latest_diagnostic,
+                personalized_quiz_trigger,
+                accepted_source,
+            ],
             api_name="submit_solution",
         )
-        full_submission_event.then(
+        completion_loaded_event = full_submission_event.then(
             load_completion,
             inputs=[profile_selector, problem_selector],
-            outputs=[
-                explanation_result,
-                completion_status,
-                *quiz_radios,
-                submit_quiz,
-                quiz_result,
-            ],
+            outputs=completion_outputs,
             api_visibility="private",
         )
-        full_submission_event.then(
+        completion_loaded_event.then(
+            None,
+            js=OPEN_COMPLETION_TAB_SCRIPT,
+            api_visibility="private",
+        )
+        completion_loaded_event.then(
             load_quiz_history,
             inputs=[profile_selector, problem_selector],
             outputs=[
@@ -1352,43 +1687,24 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
-        full_submission_event.then(
-            load_code_review_state,
-            inputs=[profile_selector, problem_selector],
-            outputs=[
-                current_code_review,
-                code_review_status,
-                retry_code_review,
-                code_review_history,
-                code_review_history_page,
-                previous_code_review_history,
-                next_code_review_history,
-            ],
-            api_visibility="private",
-        )
-        full_submission_event.then(
-            generate_code_review_ui,
+        completion_loaded_event.then(
+            generate_personalized_quiz_ui,
             inputs=[
                 profile_selector,
                 problem_selector,
-                code,
+                accepted_source,
                 cloud_consent,
-                code_review_trigger,
+                personalized_quiz_trigger,
             ],
             outputs=[
-                current_code_review,
-                code_review_status,
-                code_review_history,
-                review_quota,
-                code_review_trigger,
-                code_review_history_page,
-                previous_code_review_history,
-                next_code_review_history,
+                personalized_quiz_status,
+                personalized_quiz_trigger,
+                regenerate_personalized_quiz,
             ],
             api_visibility="private",
             show_progress="hidden",
             concurrency_limit=1,
-            concurrency_id="review-generation",
+            concurrency_id="personalized-quiz-generation",
         )
         tutor_inputs = [
             profile_selector,
@@ -1443,22 +1759,21 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         give_up_event = give_up.click(
             give_up_and_explain,
             inputs=[profile_selector, problem_selector],
-            outputs=[explanation_result, code_review_trigger],
+            outputs=[submission_result, accepted_source],
             api_name="give_up",
         )
-        give_up_event.then(
+        give_up_completion_event = give_up_event.then(
             load_completion,
             inputs=[profile_selector, problem_selector],
-            outputs=[
-                explanation_result,
-                completion_status,
-                *quiz_radios,
-                submit_quiz,
-                quiz_result,
-            ],
+            outputs=completion_outputs,
             api_visibility="private",
         )
-        give_up_event.then(
+        give_up_completion_event.then(
+            None,
+            js=OPEN_COMPLETION_TAB_SCRIPT,
+            api_visibility="private",
+        )
+        give_up_completion_event.then(
             load_quiz_history,
             inputs=[profile_selector, problem_selector],
             outputs=[
@@ -1470,45 +1785,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
-        give_up_event.then(
-            load_code_review_state,
-            inputs=[profile_selector, problem_selector],
-            outputs=[
-                current_code_review,
-                code_review_status,
-                retry_code_review,
-                code_review_history,
-                code_review_history_page,
-                previous_code_review_history,
-                next_code_review_history,
-            ],
-            api_visibility="private",
-        )
-        give_up_event.then(
-            generate_code_review_ui,
-            inputs=[
-                profile_selector,
-                problem_selector,
-                code,
-                cloud_consent,
-                code_review_trigger,
-            ],
-            outputs=[
-                current_code_review,
-                code_review_status,
-                code_review_history,
-                review_quota,
-                code_review_trigger,
-                code_review_history_page,
-                previous_code_review_history,
-                next_code_review_history,
-            ],
-            api_visibility="private",
-            show_progress="hidden",
-            concurrency_limit=1,
-            concurrency_id="review-generation",
-        )
-        submit_quiz.click(
+        fixed_quiz_event = submit_quiz.click(
             grade_quiz,
             inputs=[profile_selector, problem_selector, *quiz_radios],
             outputs=[
@@ -1518,11 +1795,57 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 quiz_history_page,
                 previous_quiz_history,
                 next_quiz_history,
+                completion_status,
+                show_explanation_button,
+                show_saved_code_reviews,
+                retry_code_review,
             ],
             api_name="grade_review_quiz",
             # Correctness is still validated by CompletionReviewService. Skipping
             # component preprocessing also lets the named API accept option IDs
             # after choices were populated by a prior completion event.
+            preprocess=False,
+        )
+        fixed_quiz_event.then(
+            load_personalized_quiz,
+            inputs=[profile_selector, problem_selector, accepted_source],
+            outputs=personalized_outputs,
+            api_visibility="private",
+        )
+        personalized_regeneration_event = regenerate_personalized_quiz.click(
+            retry_personalized_quiz_ui,
+            inputs=[
+                profile_selector,
+                problem_selector,
+                accepted_source,
+                cloud_consent,
+            ],
+            outputs=[
+                personalized_quiz_status,
+                personalized_quiz_trigger,
+                regenerate_personalized_quiz,
+            ],
+            api_name="regenerate_personalized_quiz",
+            show_progress="hidden",
+            concurrency_limit=1,
+            concurrency_id="personalized-quiz-generation",
+        )
+        personalized_regeneration_event.then(
+            load_personalized_quiz,
+            inputs=[profile_selector, problem_selector, accepted_source],
+            outputs=personalized_outputs,
+            api_visibility="private",
+        )
+        grade_personalized_quiz.click(
+            grade_personalized_quiz_ui,
+            inputs=[
+                profile_selector,
+                problem_selector,
+                personalized_quiz_set_id,
+                *personalized_radios,
+            ],
+            outputs=personalized_quiz_result,
+            api_name="grade_personalized_quiz",
             preprocess=False,
         )
         previous_quiz_history.click(
@@ -1599,6 +1922,20 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
+        show_saved_code_reviews.click(
+            load_code_review_state,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                current_code_review,
+                code_review_status,
+                retry_code_review,
+                code_review_history,
+                code_review_history_page,
+                previous_code_review_history,
+                next_code_review_history,
+            ],
+            api_name="show_saved_code_reviews",
+        )
         retry_code_review.click(
             retry_code_review_ui,
             inputs=[
@@ -1612,7 +1949,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 code_review_status,
                 code_review_history,
                 review_quota,
-                code_review_trigger,
                 code_review_history_page,
                 previous_code_review_history,
                 next_code_review_history,

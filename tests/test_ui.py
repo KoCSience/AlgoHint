@@ -74,8 +74,10 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "実行結果からヒント" in config_text
     assert "Ctrl+Enter" in config_text
     assert "algohintShortcutBound" in config_text
-    assert "完了後の復習小テスト" in config_text
-    assert "小テストを採点" in config_text
+    assert "完了後の小テスト" in config_text
+    assert "固定小テストを採点" in config_text
+    assert "保存済みAIレビューを表示" in config_text
+    assert "現在コードを新規AIレビュー" in config_text
 
 
 def test_fallback_notice_is_actionable_without_raw_provider_data() -> None:

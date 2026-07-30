@@ -138,6 +138,12 @@ def test_tutor_flow_through_named_gradio_apis(
         api_name="/submit_solution",
     )
     assert "AC" in completed
+    locked_explanation = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        api_name="/show_explanation",
+    )
+    assert "固定小テスト" in locked_explanation
 
     quiz = gradio_client.predict(
         PROFILE_ID,
@@ -152,6 +158,15 @@ def test_tutor_flow_through_named_gradio_apis(
     assert "5/5" in quiz[0]
     assert "全1回" in quiz[1]
 
+    generated_quiz = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        True,
+        api_name="/regenerate_personalized_quiz",
+    )
+    assert "AI小テスト2問を準備しました" in generated_quiz
+    assert len(provider.quiz_requests) == 1
+
     review = gradio_client.predict(
         PROFILE_ID,
         PROBLEM_ID,
@@ -163,6 +178,14 @@ def test_tutor_flow_through_named_gradio_apis(
     assert "コードレビューを表示しました" in review[1]
     assert "全1件" in review[2]
     assert len(provider.review_requests) == 1
+
+    saved_review = gradio_client.predict(
+        PROFILE_ID,
+        PROBLEM_ID,
+        api_name="/show_saved_code_reviews",
+    )
+    assert "アルゴリズムの復習" in saved_review[0]
+    assert "保存済みAIレビューを表示しました" in saved_review[1]
 
     cleared = gradio_client.predict(
         PROFILE_ID,

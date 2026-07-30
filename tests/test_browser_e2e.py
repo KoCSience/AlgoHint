@@ -140,7 +140,28 @@ def test_hint_coach_in_rendered_browser(
     editor.fill("a, b = map(int, input().split())\nprint(a + b)")
     page.locator("#full-submit").click()
     expect(page.locator("#submission-result")).to_contain_text("AC")
-    expect(page.get_by_text("5問すべてに回答して", exact=False)).to_be_visible()
+    expect(page.locator("#completion-banner")).to_contain_text("AC、おめでとうございます")
+    expect(page.locator("#personalized-quiz-status")).to_contain_text(
+        "AI小テスト2問を準備しました"
+    )
+    expect(page.locator("#current-code-review")).to_be_empty()
+    assert len(provider.quiz_requests) == 1
+    assert provider.review_requests == []
+
+    fixed_answers = (
+        ("#review-quiz-1", "二つの整数を読み取り、一度だけ加算する"),
+        ("#review-quiz-2", "入力は二つの整数、出力はその和一つ"),
+        ("#review-quiz-3", "O(1)"),
+        ("#review-quiz-4", "-3 5"),
+        ("#review-quiz-5", "分割した文字列を整数へ変換する"),
+    )
+    for radio_id, answer in fixed_answers:
+        page.locator(radio_id).get_by_text(answer, exact=True).click()
+    page.locator("#submit-review-quiz").click()
+    expect(page.locator("#review-quiz-result")).to_contain_text("5/5")
+    expect(page.locator("#personalized-quiz-1")).to_be_visible()
+
+    page.locator("#retry-code-review").click()
     expect(page.locator("#current-code-review")).to_contain_text(
         "アルゴリズムの復習"
     )

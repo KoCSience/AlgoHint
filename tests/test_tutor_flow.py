@@ -108,6 +108,25 @@ def test_question_and_hint_are_persisted_without_source_code(tmp_path: Path) -> 
     assert logs.load_log(profile_id).progress["l0_two_values"].hint_count == 1
 
 
+def test_pending_and_persisted_trigger_labels_are_identical(tmp_path: Path) -> None:
+    """All UI triggers use the same text before and after provider completion."""
+
+    provider = FakeHintProvider()
+    tutor, profile_id, _, _ = make_tutor(tmp_path, provider)
+
+    for trigger, expected in (
+        (HintTrigger.STUCK, "わからない"),
+        (HintTrigger.JUDGE_RESULT, "この実行結果についてヒントがほしい"),
+    ):
+        assert tutor.user_message_text(trigger) == expected
+        reply = tutor.request_hint(
+            profile_id,
+            "l0_two_values",
+            trigger=trigger,
+        )
+        assert reply.session.messages[-2].text == expected
+
+
 def test_unsafe_provider_output_uses_rule_based_fallback(tmp_path: Path) -> None:
     provider = FakeHintProvider("```python\ndef solve():\n    return 1\n```")
     tutor, profile_id, _, _ = make_tutor(tmp_path, provider)

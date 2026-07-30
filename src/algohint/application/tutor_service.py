@@ -110,7 +110,7 @@ class TutorService:
         hint = self._generate(selected, selected_availability, request)
         user_message = TutorMessage(
             role=TutorRole.USER,
-            text=cleaned_question or self._trigger_text(trigger),
+            text=self.user_message_text(trigger, cleaned_question),
             created_at=datetime.now(UTC),
             trigger=trigger,
         )
@@ -169,6 +169,21 @@ class TutorService:
         self._profiles.get_profile(profile_id)
         self._problems.get_problem(problem_id)
         self._sessions.clear(profile_id, problem_id)
+
+    @classmethod
+    def user_message_text(
+        cls,
+        trigger: HintTrigger,
+        question: str | None = None,
+    ) -> str:
+        """Return the exact learner turn used for pending and persisted display."""
+
+        if trigger is HintTrigger.QUESTION:
+            cleaned = question.strip() if question else ""
+            if not cleaned:
+                raise ValueError("質問を入力してください。")
+            return cleaned
+        return cls._trigger_text(trigger)
 
     def provider_availability(self, provider_id: HintProviderId) -> ProviderAvailability:
         """Expose only safe readiness metadata for the settings UI."""

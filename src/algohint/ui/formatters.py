@@ -6,6 +6,7 @@ from algohint.application.dto import (
     CodeReviewHistoryPage,
     LearnerProblemView,
     LearningReport,
+    PersonalizedQuizResult,
     QuizHistoryPage,
     QuizResult,
     SubmissionView,
@@ -86,7 +87,7 @@ def format_report(report: LearningReport) -> str:
     )
 
 
-def format_quiz_result(result: QuizResult) -> str:
+def format_quiz_result(result: QuizResult | PersonalizedQuizResult) -> str:
     """Render deterministic grading while escaping all authored display text."""
 
     sections = [f"## 小テスト結果: {result.score}/{result.total}"]

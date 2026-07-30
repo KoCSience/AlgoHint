@@ -14,16 +14,18 @@ from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
-from algohint.domain.enums import HintProviderId
+from algohint.domain.enums import CodeReviewCategory, HintProviderId
 from algohint.domain.models import (
     CodeReviewPoint,
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
+    GeneratedPersonalizedQuiz,
+    GeneratedPersonalizedQuizQuestion,
     HintGenerationRequest,
+    PersonalizedQuizRequest,
     ProviderAvailability,
 )
-from algohint.domain.enums import CodeReviewCategory
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
@@ -50,6 +52,7 @@ class DeterministicGeminiProvider:
     def __init__(self) -> None:
         self.requests: list[HintGenerationRequest] = []
         self.review_requests: list[CodeReviewRequest] = []
+        self.quiz_requests: list[PersonalizedQuizRequest] = []
 
     def availability(self) -> ProviderAvailability:
         return ProviderAvailability(
@@ -80,6 +83,34 @@ class DeterministicGeminiProvider:
                     feedback="問題文の値との対応が伝わる名前を維持しましょう。",
                 ),
             ),
+            provider="gemini",
+            model_name="gemini-e2e",
+        )
+
+    def generate_quiz(
+        self,
+        request: PersonalizedQuizRequest,
+    ) -> GeneratedPersonalizedQuiz:
+        """Return bounded code-aware questions without copying submitted source."""
+
+        self.quiz_requests.append(request)
+        question_count = 3 if request.mode.value == "fixed_3" else 2
+        questions = tuple(
+            GeneratedPersonalizedQuizQuestion(
+                focus=(
+                    CodeReviewCategory.CORRECTNESS
+                    if index == 0
+                    else CodeReviewCategory.MAINTAINABILITY
+                ),
+                prompt=f"コード別の学習確認 {index + 1}",
+                options=("適切な選択肢", "不適切な選択肢", "別の不適切な選択肢"),
+                correct_option_index=0,
+                explanation="現在の実装を学習観点から確認するための解説です。",
+            )
+            for index in range(question_count)
+        )
+        return GeneratedPersonalizedQuiz(
+            questions=questions,
             provider="gemini",
             model_name="gemini-e2e",
         )
