@@ -24,7 +24,9 @@ def _stack_fakes(tmp_path: Path) -> tuple[dict[str, str], Path]:
     _write_executable(
         control,
         """
-printf 'control %s\\n' "$*" >>"$FAKE_CALLS"
+printf 'control %s app_root=%s code_root=%s\\n' \
+  "$*" "${ALGOHINT_GEMMA_APP_ROOT:-}" "${ALGOHINT_GEMMA_CODE_ROOT:-}" \
+  >>"$FAKE_CALLS"
 if [[ "${1:-}" == "status" ]]; then
     if [[ "${FAKE_GEMMA_RUNNING:-0}" == "1" ]]; then
         echo 'process: running (pid=12, validated)'
@@ -63,16 +65,8 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "run-algohint.sh",
         SCRIPTS / "run-local-stack.sh",
         SCRIPTS / "run-ssh-stack.sh",
-        PROJECT_ROOT
-        / "services"
-        / "gemma-transformers-server"
-        / "scripts"
-        / "run-server.sh",
-        PROJECT_ROOT
-        / "services"
-        / "gemma-transformers-server"
-        / "scripts"
-        / "server-control.sh",
+        SCRIPTS / "bootstrap-gemma-server-remote.sh",
+        SCRIPTS / "install-gemma-server-ssh.sh",
     ]
     result = subprocess.run(
         ["bash", "-n", *(str(path) for path in paths)],
@@ -140,6 +134,7 @@ def test_local_stack_stops_only_gemma_it_started(tmp_path: Path) -> None:
     assert "control start" in first_calls
     assert "control stop" in first_calls
     assert "deployment=local" in first_calls
+    assert "app_root= code_root=" in first_calls
 
     calls.write_text("", encoding="utf-8")
     existing_environment = {**environment, "FAKE_GEMMA_RUNNING": "1"}
@@ -171,6 +166,25 @@ def test_local_keep_flag_preserves_new_server(tmp_path: Path) -> None:
     recorded = calls.read_text(encoding="utf-8")
     assert "control start" in recorded
     assert "control stop" not in recorded
+
+
+def test_local_stack_requires_standalone_server_install(tmp_path: Path) -> None:
+    environment, calls = _stack_fakes(tmp_path)
+    environment.pop("ALGOHINT_LOCAL_GEMMA_CONTROL")
+    environment["ALGOHINT_GEMMA_INSTALL_ROOT"] = str(tmp_path / "missing-server")
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-local-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Standalone Gemma Server control script is missing" in result.stderr
+    assert "Install the pinned release" in result.stderr
+    assert not calls.exists()
 
 
 def test_local_stack_ctrl_c_stops_owned_children(tmp_path: Path) -> None:
@@ -263,6 +277,8 @@ def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None
     assert result.returncode == 0, result.stderr
     recorded = calls.read_text(encoding="utf-8")
     assert "/remote/learner/programs/algohint-gemma-server" in recorded
+    assert "ALGOHINT_GEMMA_INSTALL_ROOT=" in recorded
+    assert "ALGOHINT_GEMMA_APP_ROOT=" not in recorded
     assert "'start'" in recorded
     assert " -N -T " in f" {recorded} "
     assert "'stop'" in recorded
@@ -327,7 +343,6 @@ def test_ssh_stack_rejects_unsafe_remote_path_overrides(tmp_path: Path) -> None:
     overrides = {
         "ALGOHINT_SSH_REMOTE_APP_ROOT": "remote_app_root",
         "ALGOHINT_SSH_REMOTE_CONTROL": "remote_control",
-        "ALGOHINT_SSH_REMOTE_CODE_ROOT": "remote_code_root",
     }
 
     for environment_name, shell_name in overrides.items():

@@ -42,12 +42,15 @@ credentialsをホーム配下へ作成します。`.env`やリポジトリ内へ
 
 別ホストのGemmaを使う場合は、AlgoHintより先に互換性のある
 [AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)を
-SSH接続先へ配備する必要があります。独立サーバーは公開準備中のため、固定された開発版が
-利用可能になるまでは、未コミットのcheckoutを起動スクリプトから自動配備しません。
-SSH設定名（例: `gpu-learning-host`）を自分の接続先へ置き換え、接続だけを先に確認します。
+SSH接続先へ配備する必要があります。このAlgoHint commitが検証したGemma Serverの
+public repositoryと40桁commit SHAは
+[release manifest](config/gemma-server-release.conf)に固定しています。SSH設定名
+（例: `gpu-learning-host`）を自分の接続先へ置き換え、接続と初回配備を行います。
 
 ```bash
 ssh -T 'gpu-learning-host' 'true'
+ALGOHINT_SSH_TARGET='gpu-learning-host' \
+  ./scripts/install-gemma-server-ssh.sh
 ```
 
 必要なGPU、credentials、モデル、`server-control.sh`の配置順は
@@ -82,8 +85,9 @@ docker compose down
 [開発ガイド](docs/development.md#llm設定と秘密情報)を参照してください。キーがない場合も
 アプリは起動し、固定のRuleBasedヒントへ安全に退避します。
 
-同一ホストのGemma Serverもまとめて起動する場合は次を使います。終了時はこのスクリプトが
-新しく起動したGemmaだけを停止します。継続する場合は`--keep-gemma`を付けます。
+同一ホストへstandalone Gemma Serverをversion付き配備済みの場合は、次を使います。
+AlgoHintリポジトリ内のserverへfallbackしません。終了時はこのスクリプトが新しく起動した
+Gemmaだけを停止し、継続する場合は`--keep-gemma`を付けます。
 
 ```bash
 ./scripts/run-local-stack.sh
@@ -98,7 +102,7 @@ ALGOHINT_SSH_TARGET='gpu-learning-host' ./scripts/run-ssh-stack.sh
 ```
 
 vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
-接続する場合は、[Gemma Server接続・移行ガイド](docs/gemma-server.md)を参照してください。
+接続する場合は、[Gemma Server接続ガイド](docs/gemma-server.md)を参照してください。
 ホーム配下へ配置し、SSHトンネルで接続する構成を記載しています。
 
 Geminiの接続、キー、権限、モデル到達性だけを確認する場合は、学習者の問題文や

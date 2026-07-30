@@ -26,13 +26,18 @@ uv lock --check
 
 Gemma専用サーバーの正本は
 [KoCSience/AlgoHint-Gemma-Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)
-へ移行中です。移行完了までは埋込み版との契約回帰を次で検証しますが、同じ修正を両repoへ
-別々に加えないでください。独立repoの固定version公開後、このコマンドはconsumer contract
-testと兄弟checkoutを使う手順へ置き換えます。
+です。AlgoHint側ではHTTP consumer、固定release manifest、起動scriptだけを保守し、
+server実装を重複させません。server変更は独立repoで検証し、そのfull commit SHAを
+AlgoHintのmanifestへ更新してconsumer contract testを実行します。
 
 ```bash
-uv run --project services/gemma-transformers-server \
-  pytest -q services/gemma-transformers-server/tests
+git clone https://github.com/KoCSience/AlgoHint-Gemma-Server.git \
+  ../AlgoHint-Gemma-Server
+uv run --project ../AlgoHint-Gemma-Server --locked pytest
+uv run pytest -q \
+  tests/test_transformers_http_hint_provider.py \
+  tests/test_gemma_server_install.py \
+  tests/test_startup_scripts.py
 ```
 
 ヒント機能を変更した場合は、通常テストに加えてGradio API E2Eと、明示的に有効化する
@@ -226,7 +231,7 @@ Geminiアダプタは、生成応答の`text`取得またはdoctorのモデル�
 vLLMが導入できないLinuxホストでは、PyTorch／Hugging Face Transformers版の専用
 FastAPIサーバーを利用できます。利用者のホーム配下への配置、認証キー作成、
 固定revisionのモデル取得、SSHトンネル、起動・停止・ロールバックは
-[Gemma Server接続・移行ガイド](gemma-server.md)を参照してください。
+[Gemma Server接続ガイド](gemma-server.md)を参照してください。
 
 SSHトンネルとGemmaサーバーを起動し、Gemma用credentialsを読み込んだ同じシェルで
 次を実行します。

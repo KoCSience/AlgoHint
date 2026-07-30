@@ -164,7 +164,7 @@ Chrome DevTools MCPの導入と操作は
 ## 実Gemma Transformersサーバー
 
 vLLMが利用できない場合は、別LinuxホストのPyTorch／Transformers専用サーバーを使います。
-[Gemma Server接続・移行ガイド](gemma-server.md)に従い、SSHトンネルを作る前に
+[Gemma Server接続ガイド](gemma-server.md)に従い、SSHトンネルを作る前に
 version付きサーバーのcontrolが配置済みか確認します。
 
 ```bash

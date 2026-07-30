@@ -62,8 +62,7 @@ else
     remote_app_root="$remote_home/programs/algohint-gemma-server"
 fi
 remote_control="${ALGOHINT_SSH_REMOTE_CONTROL:-$remote_app_root/current/scripts/server-control.sh}"
-remote_code_root="${ALGOHINT_SSH_REMOTE_CODE_ROOT:-$remote_app_root/current}"
-for remote_path_name in remote_app_root remote_control remote_code_root; do
+for remote_path_name in remote_app_root remote_control; do
     remote_path="${!remote_path_name}"
     if [[ -z "$remote_path" || "$remote_path" == *$'\n'* ]]; then
         echo "$remote_path_name must be one non-empty remote path without newlines." >&2
@@ -75,7 +74,7 @@ quoted_control="$(quote_remote "$remote_control")"
 remote_control_command() {
     local action="$1"
     ssh -T "$ssh_target" \
-        "ALGOHINT_GEMMA_APP_ROOT=$(quote_remote "$remote_app_root") ALGOHINT_GEMMA_CODE_ROOT=$(quote_remote "$remote_code_root") $quoted_control $(quote_remote "$action")"
+        "ALGOHINT_GEMMA_INSTALL_ROOT=$(quote_remote "$remote_app_root") $quoted_control $(quote_remote "$action")"
 }
 
 # Distinguish an incomplete remote installation from a controller or model

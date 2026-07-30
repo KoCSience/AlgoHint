@@ -83,6 +83,8 @@
 - [ ] Playwright実行中にconsole error、HTTP 4xx/5xx、想定外の通信失敗がない。
 - [ ] Playwright失敗時のtraceとスクリーンショットを`/tmp/algohint-e2e/`へ保存し、秘密情報を含まないことを確認できる。
 - [ ] 利用者のホーム配下へTransformers版Gemmaサーバーを配置し、固定revisionを3枚のGPUでロードできる。
+- [ ] AlgoHintのrelease manifestが公開Gemma Serverのfull commit SHAを固定し、branchや`HEAD`を配備しない。
+- [ ] SSH installerが固定SHAのtracked sourceだけをreleaseへ配備し、実行中の`current`を切り替えない。
 - [ ] Gemmaサーバーがリモートの`127.0.0.1:18080`だけで待ち受け、未認証要求を拒否する。
 - [ ] Gemmaサーバーの認証付き`/v1/reviews`が構造化レビューを返し、入力コードや認証値をログへ出さない。
 - [ ] Gemmaの状態JSONがprocessor／model読込、ready、3種の生成中、直近失敗、停止を原子的に記録する。
@@ -90,7 +92,7 @@
 - [ ] `server-control.sh attach`で状態・GPU概要・追従ログが表示され、サーバー異常終了後もmonitorが残る。
 - [ ] `server-control.sh status`がtmux、検証済みPID、状態JSON、healthzの食い違いを警告する。
 - [ ] ログが設定上限で世代ローテーションし、`stop`が対象tmuxと検証済みPID以外を終了しない。
-- [ ] 3起動スクリプトが`bash -n`を通り、リポジトリ位置と`$HOME`から絶対パスを解決する。
+- [ ] 起動・bootstrapスクリプトが`bash -n`を通り、リポジトリ位置と`$HOME`から絶対パスを解決する。
 - [ ] SSH先の`server-control.sh`が未配置または実行不可なら、期待パスと独立Gemma Serverの導入先を表示して終了コード`2`を返し、Gemma、トンネル、AlgoHintを起動しない。
 - [ ] control確認のSSH通信失敗とcontrol未配置を別の診断として表示し、秘密値を出力しない。
 - [ ] local／SSH一括起動は自分が新規起動したGemmaだけを既定停止し、起動済みGemmaを停止しない。

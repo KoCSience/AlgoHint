@@ -29,9 +29,9 @@ Gemmaは別管理のvLLM／llama.cpp互換サーバー、または専用Transfor
 `ALGOHINT_GEMMA_DEPLOYMENT=remote`を明示してクラウドと同じ送信同意を要求します。
 推論サーバーはリモート側の`127.0.0.1`だけで待ち受け、Bearer認証を必須にします。
 サーバー実装と設定の正本は
-[AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)へ移行中です。
-AlgoHintとの接続、鍵の受渡し、SSHトンネルは
-[Gemma Server接続・移行ガイド](gemma-server.md)を参照してください。
+[AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)です。
+AlgoHint側は固定commitのmanifest、鍵の受渡し、SSHトンネルだけを所有します。詳細は
+[Gemma Server接続ガイド](gemma-server.md)を参照してください。
 
 質問と表示済みヒントは `data/runtime/tutor_sessions/` に最大20往復保存します。
 現在コードと診断本文は保存しません。「この問題のヒント履歴をクリア」で問題単位に
