@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from algohint.application.explanation_service import ExplanationService
+from algohint.application.completion_service import CompletionService
 from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
@@ -122,7 +122,7 @@ def build_e2e_app(runtime_root: Path):
             {HintProviderId.GEMINI: provider},
             RuleBasedHintProvider(),
         ),
-        explanations=ExplanationService(problems, logs),
+        completions=CompletionService(logs),
         reports=LearningReportService(problems, logs),
         teacher_repository=problems,
     )

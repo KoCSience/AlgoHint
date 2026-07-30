@@ -17,7 +17,9 @@ from algohint.domain.enums import (
     HintProviderId,
     HintTrigger,
     JudgeStatus,
+    PersonalizedQuizMode,
     ProviderFailureReason,
+    QuizKind,
     QuizTopic,
     ReviewHistoryKind,
     TestVisibility,
@@ -186,6 +188,9 @@ class ProfilePreferences(FrozenModel):
     """
 
     hint_provider: HintProviderId = HintProviderId.OPENAI
+    personalized_quiz_mode: PersonalizedQuizMode = (
+        PersonalizedQuizMode.ADAPTIVE_2_TO_5
+    )
     last_problem_id: str | None = Field(
         default=None,
         pattern=r"^[a-z0-9_-]+$",
@@ -282,6 +287,68 @@ class QuizAttempt(FrozenModel):
     score: int = Field(ge=0, le=5)
     total: int = Field(default=5, ge=5, le=5)
     feedback: tuple[StoredQuizFeedback, ...] = Field(min_length=5, max_length=5)
+
+
+class PersonalizedQuizQuestion(FrozenModel):
+    """One server-identified AI question whose answer never crosses the pre-grade DTO."""
+
+    question_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    focus: CodeReviewCategory
+    prompt: str = Field(min_length=1, max_length=500)
+    options: tuple[QuizOption, ...] = Field(min_length=3, max_length=4)
+    correct_option_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    explanation: str = Field(min_length=1, max_length=800)
+
+    def model_post_init(self, __context: object) -> None:
+        option_ids = [option.option_id for option in self.options]
+        option_texts = [option.text.strip() for option in self.options]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError(f"Duplicate option ID in {self.question_id}")
+        if len(option_texts) != len(set(option_texts)):
+            raise ValueError(f"Duplicate option text in {self.question_id}")
+        if self.correct_option_id not in option_ids:
+            raise ValueError(f"Unknown correct option in {self.question_id}")
+
+
+class PersonalizedQuizSet(FrozenModel):
+    """Persisted code-aware questions without retaining the source that produced them."""
+
+    quiz_set_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    generated_at: datetime
+    provider: str = Field(min_length=1, max_length=80)
+    model_name: str = Field(min_length=1, max_length=200)
+    mode: PersonalizedQuizMode
+    questions: tuple[PersonalizedQuizQuestion, ...] = Field(
+        min_length=2,
+        max_length=5,
+    )
+
+    def model_post_init(self, __context: object) -> None:
+        question_ids = [question.question_id for question in self.questions]
+        prompts = [question.prompt.strip() for question in self.questions]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("Personalized quiz has duplicate question IDs")
+        if len(prompts) != len(set(prompts)):
+            raise ValueError("Personalized quiz has duplicate prompts")
+        if self.mode is PersonalizedQuizMode.FIXED_3 and len(self.questions) != 3:
+            raise ValueError("fixed_3 personalized quizzes must contain exactly three questions")
+
+
+class PersonalizedQuizAttempt(FrozenModel):
+    """One immutable grading snapshot for a generated code-aware quiz."""
+
+    quiz_kind: QuizKind = QuizKind.AI_CODE
+    quiz_set_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    attempted_at: datetime
+    score: int = Field(ge=0, le=5)
+    total: int = Field(ge=2, le=5)
+    feedback: tuple[StoredQuizFeedback, ...] = Field(min_length=2, max_length=5)
+
+    def model_post_init(self, __context: object) -> None:
+        if self.total != len(self.feedback):
+            raise ValueError("Personalized quiz total must match feedback length")
+        if self.score != sum(item.correct for item in self.feedback):
+            raise ValueError("Personalized quiz score must match feedback")
 
 
 class ReviewQuotaStatus(FrozenModel):

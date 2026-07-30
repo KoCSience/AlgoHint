@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from algohint.application.explanation_service import ExplanationService
+from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.hint_service import HintService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.profile_service import ProfileService
@@ -11,6 +11,9 @@ from algohint.infrastructure.json_learning_log_repository import JsonLearningLog
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
+from algohint.infrastructure.sqlite_review_history_repository import (
+    SqliteReviewHistoryRepository,
+)
 
 
 DATA_DIR = Path(__file__).parents[1] / "data"
@@ -41,18 +44,25 @@ def test_hidden_failure_is_not_revealed_to_learner(tmp_path: Path) -> None:
 def test_hint_explanation_and_report_flow(tmp_path: Path) -> None:
     problems, logs, profile = make_services(tmp_path)
     hints = HintService(problems, logs)
-    explanations = ExplanationService(problems, logs)
+    profiles = JsonProfileRepository(DataPaths(tmp_path / "runtime-data"))
+    reviews = CompletionReviewService(
+        problems,
+        profiles,
+        logs,
+        SqliteReviewHistoryRepository(DataPaths(tmp_path / "runtime-data"), profiles),
+        {},
+    )
     submissions = SubmissionService(problems, logs, LocalJudgeRunner())
 
     hint = hints.request(profile.profile_id, "l0_two_values")
     assert hint.leak_checked
-    assert explanations.get_explanation(profile.profile_id, "l0_two_values") is None
+    assert reviews.view(profile.profile_id, "l0_two_values") is None
 
     result = submissions.submit(
         profile.profile_id, "l0_two_values", "a, b = map(int, input().split())\nprint(a + b)"
     )
     assert result.status is JudgeStatus.AC
-    assert explanations.get_explanation(profile.profile_id, "l0_two_values") is not None
+    assert reviews.view(profile.profile_id, "l0_two_values") is not None
 
     report = LearningReportService(problems, logs).report(profile.profile_id)
     assert report.solved_count == 1
@@ -61,7 +71,16 @@ def test_hint_explanation_and_report_flow(tmp_path: Path) -> None:
 
 def test_sample_ac_does_not_release_explanation(tmp_path: Path) -> None:
     problems, logs, profile = make_services(tmp_path)
-    explanations = ExplanationService(problems, logs)
+    reviews = CompletionReviewService(
+        problems,
+        JsonProfileRepository(DataPaths(tmp_path / "runtime-data")),
+        logs,
+        SqliteReviewHistoryRepository(
+            DataPaths(tmp_path / "runtime-data"),
+            JsonProfileRepository(DataPaths(tmp_path / "runtime-data")),
+        ),
+        {},
+    )
     submissions = SubmissionService(problems, logs, LocalJudgeRunner())
 
     result = submissions.submit(
@@ -73,7 +92,7 @@ def test_sample_ac_does_not_release_explanation(tmp_path: Path) -> None:
 
     assert result.status is JudgeStatus.AC
     assert "全テスト" in result.message
-    assert explanations.get_explanation(profile.profile_id, "l0_two_values") is None
+    assert reviews.view(profile.profile_id, "l0_two_values") is None
 
 
 def test_profiles_have_separate_logs(tmp_path: Path) -> None:

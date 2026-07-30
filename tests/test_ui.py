@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from algohint.application.explanation_service import ExplanationService
+from algohint.application.completion_service import CompletionService
 from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
@@ -56,7 +56,7 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
                 {HintProviderId.OPENAI: fallback},
                 fallback,
             ),
-            explanations=ExplanationService(problems, logs),
+            completions=CompletionService(logs),
             reports=LearningReportService(problems, logs),
             teacher_repository=problems,
         ),

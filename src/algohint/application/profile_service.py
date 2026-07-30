@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from algohint.domain.enums import HintProviderId
+from algohint.domain.enums import HintProviderId, PersonalizedQuizMode
 from algohint.domain.models import Profile, ProfilePreferences
 from algohint.domain.ports import LearningLogRepository, ProfileRepository
 
@@ -62,6 +62,24 @@ class ProfileService:
             update={
                 "preferences": profile.preferences.model_copy(
                     update={"hint_provider": provider}
+                )
+            }
+        )
+        self._profiles.save_profile(updated)
+        return updated
+
+    def set_personalized_quiz_mode(
+        self,
+        profile_id: str,
+        mode: PersonalizedQuizMode,
+    ) -> Profile:
+        """Persist quiz sizing independently from provider and navigation preferences."""
+
+        profile = self._profiles.get_profile(profile_id)
+        updated = profile.model_copy(
+            update={
+                "preferences": profile.preferences.model_copy(
+                    update={"personalized_quiz_mode": mode}
                 )
             }
         )

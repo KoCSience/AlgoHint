@@ -46,6 +46,10 @@ class CompletionRequiredError(PermissionError):
     """Raised when review content is requested before AC or give-up."""
 
 
+class QuizRequiredError(PermissionError):
+    """Raised until the learner has submitted every authored review question."""
+
+
 class ReviewConsentRequiredError(PermissionError):
     """Raised before learner source is sent to an off-device review provider."""
 
@@ -83,7 +87,6 @@ class CompletionReviewService:
         progress = self._progress(profile_id, problem_id)
         if not (progress.solved or progress.gave_up):
             return None
-        problem = self._problems.get_problem(problem_id)
         material = self._problems.get_review_material(problem_id)
         questions = tuple(
             PublicQuizQuestion(
@@ -98,10 +101,24 @@ class CompletionReviewService:
             for question in material.questions
         )
         return CompletionReviewView(
-            explanation=problem.explanation,
+            completion_reason=(
+                CompletionReason.FULL_AC
+                if progress.solved
+                else CompletionReason.GAVE_UP
+            ),
+            authored_quiz_completed=self._history.authored_quiz_completed(
+                profile_id,
+                problem_id,
+            ),
             material_version=material.version,
             questions=questions,
         )
+
+    def get_explanation(self, profile_id: str, problem_id: str) -> str:
+        """Release authored explanation only after the fixed quiz was submitted."""
+
+        self._require_authored_quiz(profile_id, problem_id)
+        return self._problems.get_problem(problem_id).explanation
 
     def grade(
         self,
@@ -217,6 +234,7 @@ class CompletionReviewService:
         progress = self._progress(profile_id, problem_id)
         if not (progress.solved or progress.gave_up):
             raise CompletionRequiredError("ACまたはギブアップ後にコードをレビューできます。")
+        self._require_authored_quiz(profile_id, problem_id)
         if not source_code.strip():
             raise ValueError("レビューするPythonコードを入力してください。")
         if len(source_code) > MAX_REVIEW_SOURCE_CHARS:
@@ -301,8 +319,7 @@ class CompletionReviewService:
 
         if page < 0:
             raise ValueError("page must not be negative")
-        if self.view(profile_id, problem_id) is None:
-            raise CompletionRequiredError("ACまたはギブアップ後に履歴を表示できます。")
+        self._require_authored_quiz(profile_id, problem_id)
         records = self._history.list_records(
             profile_id,
             problem_id,
@@ -330,3 +347,11 @@ class CompletionReviewService:
             problem_id,
             ProblemProgress(),
         )
+
+    def _require_authored_quiz(self, profile_id: str, problem_id: str) -> None:
+        if self.view(profile_id, problem_id) is None:
+            raise CompletionRequiredError("ACまたはギブアップ後に利用できます。")
+        if not self._history.authored_quiz_completed(profile_id, problem_id):
+            raise QuizRequiredError(
+                "固定小テスト実施中は、解説とAIコード改善レビューを確認できません。"
+            )

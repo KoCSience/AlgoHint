@@ -109,11 +109,27 @@ class QuizTopic(StrEnum):
     IMPLEMENTATION = "implementation"
 
 
+class QuizKind(StrEnum):
+    """Distinguish reviewed authored material from code-aware AI material."""
+
+    AUTHORED = "authored"
+    AI_CODE = "ai_code"
+
+
+class PersonalizedQuizMode(StrEnum):
+    """Control the bounded number of code-aware questions requested from AI."""
+
+    ADAPTIVE_2_TO_5 = "adaptive_2_to_5"
+    FIXED_3 = "fixed_3"
+
+
 class ReviewHistoryKind(StrEnum):
     """Persisted completion-review record families sharing one quota."""
 
     QUIZ_ATTEMPT = "quiz_attempt"
     CODE_REVIEW = "code_review"
+    AI_QUIZ_SET = "ai_quiz_set"
+    AI_QUIZ_ATTEMPT = "ai_quiz_attempt"
 
 
 class CompletionReason(StrEnum):

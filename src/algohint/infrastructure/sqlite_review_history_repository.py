@@ -10,6 +10,8 @@ from threading import RLock
 from algohint.domain.enums import ReviewHistoryKind
 from algohint.domain.models import (
     CodeReviewEntry,
+    PersonalizedQuizAttempt,
+    PersonalizedQuizSet,
     QuizAttempt,
     ReviewHistoryRecord,
     ReviewQuotaStatus,
@@ -60,6 +62,7 @@ class SqliteReviewHistoryRepository:
             kind=ReviewHistoryKind.QUIZ_ATTEMPT,
             created_at=attempt.attempted_at.isoformat(),
             payload_json=payload_json,
+            unlock_authored_quiz_at=attempt.attempted_at.isoformat(),
         )
 
     def save_code_review(
@@ -77,6 +80,53 @@ class SqliteReviewHistoryRepository:
             created_at=entry.reviewed_at.isoformat(),
             payload_json=entry.model_dump_json(),
         )
+
+    def save_personalized_quiz(
+        self,
+        profile_id: str,
+        problem_id: str,
+        quiz: PersonalizedQuizSet,
+    ) -> ReviewQuotaStatus:
+        """Persist generated questions while deliberately excluding learner source."""
+
+        return self._save(
+            profile_id,
+            problem_id,
+            kind=ReviewHistoryKind.AI_QUIZ_SET,
+            created_at=quiz.generated_at.isoformat(),
+            payload_json=quiz.model_dump_json(),
+        )
+
+    def save_personalized_quiz_attempt(
+        self,
+        profile_id: str,
+        problem_id: str,
+        attempt: PersonalizedQuizAttempt,
+    ) -> ReviewQuotaStatus:
+        """Persist deterministic feedback for one generated quiz attempt."""
+
+        return self._save(
+            profile_id,
+            problem_id,
+            kind=ReviewHistoryKind.AI_QUIZ_ATTEMPT,
+            created_at=attempt.attempted_at.isoformat(),
+            payload_json=attempt.model_dump_json(),
+        )
+
+    def authored_quiz_completed(self, profile_id: str, problem_id: str) -> bool:
+        """Read the durable unlock marker, which is independent from prunable history."""
+
+        with closing(self._connect(profile_id)) as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM review_unlocks
+                WHERE problem_id = ?
+                LIMIT 1
+                """,
+                (problem_id,),
+            ).fetchone()
+        return row is not None
 
     def list_records(
         self,
@@ -137,6 +187,7 @@ class SqliteReviewHistoryRepository:
         kind: ReviewHistoryKind,
         created_at: str,
         payload_json: str,
+        unlock_authored_quiz_at: str | None = None,
     ) -> ReviewQuotaStatus:
         envelope = json.dumps(
             {
@@ -169,6 +220,17 @@ class SqliteReviewHistoryRepository:
                         payload_bytes,
                     ),
                 )
+                if unlock_authored_quiz_at is not None:
+                    # Persist the unlock separately from quota-pruned attempts so
+                    # access never relocks after a learner has completed the quiz.
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO review_unlocks(
+                            problem_id, first_authored_quiz_completed_at
+                        ) VALUES (?, ?)
+                        """,
+                        (problem_id, unlock_authored_quiz_at),
+                    )
                 used_bytes = self._usage(connection) + payload_bytes
                 self._set_usage(connection, used_bytes)
                 used_bytes, pruned_count = self._prune(connection, used_bytes)
@@ -198,12 +260,18 @@ class SqliteReviewHistoryRepository:
 
     @staticmethod
     def _initialize(connection: sqlite3.Connection) -> None:
+        SqliteReviewHistoryRepository._migrate_history_kind_constraint(connection)
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS history_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 problem_id TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK(kind IN ('quiz_attempt', 'code_review')),
+                kind TEXT NOT NULL CHECK(kind IN (
+                    'quiz_attempt',
+                    'code_review',
+                    'ai_quiz_set',
+                    'ai_quiz_attempt'
+                )),
                 created_at TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
                 payload_bytes INTEGER NOT NULL CHECK(payload_bytes > 0)
@@ -217,6 +285,63 @@ class SqliteReviewHistoryRepository:
                 value INTEGER NOT NULL
             );
             INSERT OR IGNORE INTO history_meta(key, value) VALUES ('used_bytes', 0);
+            CREATE TABLE IF NOT EXISTS review_unlocks (
+                problem_id TEXT PRIMARY KEY,
+                first_authored_quiz_completed_at TEXT NOT NULL
+            );
+            INSERT OR IGNORE INTO review_unlocks(
+                problem_id, first_authored_quiz_completed_at
+            )
+            SELECT problem_id, MIN(created_at)
+            FROM history_records
+            WHERE kind = 'quiz_attempt'
+            GROUP BY problem_id;
+            """
+        )
+
+    @staticmethod
+    def _migrate_history_kind_constraint(connection: sqlite3.Connection) -> None:
+        """Expand the closed kind vocabulary without discarding existing history."""
+
+        row = connection.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'history_records'
+            """
+        ).fetchone()
+        if row is None or "ai_quiz_set" in str(row["sql"]):
+            return
+        connection.executescript(
+            """
+            BEGIN IMMEDIATE;
+            DROP INDEX IF EXISTS history_problem_page;
+            DROP INDEX IF EXISTS history_oldest;
+            ALTER TABLE history_records RENAME TO history_records_legacy;
+            CREATE TABLE history_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                problem_id TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN (
+                    'quiz_attempt',
+                    'code_review',
+                    'ai_quiz_set',
+                    'ai_quiz_attempt'
+                )),
+                created_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_bytes INTEGER NOT NULL CHECK(payload_bytes > 0)
+            );
+            INSERT INTO history_records(
+                id, problem_id, kind, created_at, payload_json, payload_bytes
+            )
+            SELECT id, problem_id, kind, created_at, payload_json, payload_bytes
+            FROM history_records_legacy;
+            DROP TABLE history_records_legacy;
+            CREATE INDEX history_problem_page
+                ON history_records(problem_id, kind, created_at DESC, id DESC);
+            CREATE INDEX history_oldest
+                ON history_records(created_at ASC, id ASC);
+            COMMIT;
             """
         )
 

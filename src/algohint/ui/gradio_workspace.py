@@ -11,6 +11,7 @@ from algohint.application.dto import LearnerDiagnostic
 from algohint.application.completion_review_service import (
     CodeReviewUnavailableError,
     CompletionRequiredError,
+    QuizRequiredError,
     ReviewConsentRequiredError,
 )
 from algohint.application.tutor_service import CloudConsentRequiredError
@@ -205,6 +206,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             initial_problem_id,
         )
         if initial_review is not None
+        and initial_review.authored_quiz_completed
         and default_profile is not None
         and initial_problem_id is not None
         else None
@@ -351,9 +353,9 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         show_explanation_button = gr.Button("解説を表示")
                         give_up = gr.Button("ギブアップして解説を見る", variant="stop")
                     explanation_result = gr.Markdown(
-                        initial_review.explanation
+                        "解説は固定小テストの採点後、ボタンを押すと表示されます。"
                         if initial_review is not None
-                        else "ACまたはギブアップ後に解説を表示できます。"
+                        else "ACまたはギブアップ後に利用できます。"
                     )
 
                     gr.Markdown("## 完了後の復習小テスト")
@@ -428,7 +430,12 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                         (
                             "完了済みです。現在コードをレビューするには再試行できます。"
                             if initial_review is not None
-                            else "全テストACまたはギブアップ後に利用できます。"
+                            and initial_review.authored_quiz_completed
+                            else (
+                                "固定小テスト実施中は、AIコード改善レビューを確認できません。"
+                                if initial_review is not None
+                                else "全テストACまたはギブアップ後に利用できます。"
+                            )
                         ),
                         elem_id="code-review-status",
                     )
@@ -443,7 +450,10 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     )
                     retry_code_review = gr.Button(
                         "現在コードをAIレビュー",
-                        visible=initial_review is not None,
+                        visible=(
+                            initial_review is not None
+                            and initial_review.authored_quiz_completed
+                        ),
                         elem_id="retry-code-review",
                     )
                     code_review_history = gr.Markdown(
@@ -809,22 +819,23 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             if not profile_id or not problem_id:
                 return "プロフィールと問題を選択してください。"
             if surrender:
-                services.explanations.give_up(profile_id, problem_id)
-            explanation = services.explanations.get_explanation(profile_id, problem_id)
-            return explanation or "解説はACまたはギブアップ後に表示できます。"
+                services.completions.give_up(profile_id, problem_id)
+            try:
+                return services.reviews.get_explanation(profile_id, problem_id)
+            except (CompletionRequiredError, QuizRequiredError) as error:
+                return str(error)
 
         def give_up_and_explain(
             profile_id: str | None,
             problem_id: str | None,
         ):
-            """Trigger one automatic review only on the first give-up transition."""
+            """Record give-up without revealing explanation or starting an AI review."""
 
             if not profile_id or not problem_id:
                 return "プロフィールと問題を選択してください。", False
-            newly_completed = services.explanations.give_up(profile_id, problem_id)
-            explanation = services.explanations.get_explanation(profile_id, problem_id)
+            newly_completed = services.completions.give_up(profile_id, problem_id)
             return (
-                explanation or "解説を読み込めませんでした。",
+                "ギブアップを記録しました。固定小テストに進みましょう。",
                 newly_completed,
             )
 
@@ -862,7 +873,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 for index, question in enumerate(view.questions, start=1)
             ]
             return (
-                view.explanation,
+                "解説は固定小テストの採点後、ボタンを押すと表示されます。",
                 "5問すべてに回答して、アルゴリズムと問題の捉え方を復習しましょう。",
                 *updates,
                 gr.Button(visible=True),
@@ -974,6 +985,16 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 return (
                     "",
                     "全テストACまたはギブアップ後に利用できます。",
+                    gr.Button(visible=False),
+                    "",
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+            if not view.authored_quiz_completed:
+                return (
+                    "",
+                    "固定小テスト実施中は、AIコード改善レビューを確認できません。",
                     gr.Button(visible=False),
                     "",
                     0,
@@ -1102,6 +1123,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             except (
                 CodeReviewUnavailableError,
                 CompletionRequiredError,
+                QuizRequiredError,
                 ReviewConsentRequiredError,
                 ValueError,
             ) as error:

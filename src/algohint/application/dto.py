@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from algohint.domain.enums import JudgeStatus
+from algohint.domain.enums import CompletionReason, JudgeStatus
 from algohint.domain.models import (
     CodeReviewEntry,
     GeneratedHint,
@@ -110,9 +110,10 @@ class PublicQuizQuestion:
 
 @dataclass(frozen=True)
 class CompletionReviewView:
-    """Completion-gated explanation and authored quiz."""
+    """Completion state and answer-free authored questions."""
 
-    explanation: str
+    completion_reason: CompletionReason
+    authored_quiz_completed: bool
     material_version: int
     questions: tuple[PublicQuizQuestion, ...]
 

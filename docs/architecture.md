@@ -18,9 +18,10 @@ Gradio UI
 OpenAI、Gemma、Gemini固有のSDKとHTTP処理は `infrastructure/` に閉じ込めます。
 詳しい信頼境界は[適応型ヒントとLLM設計](llm-hint-design.md)を参照してください。
 
-完了後の復習は `CompletionReviewService` が担当します。固定小テストの公開・採点、
-完了条件の再確認、AIレビュー要求の構築、安全検査、履歴保存を一つのユースケース境界に
-集めます。UIや各プロバイダが独自に完了を判断したり、正解情報を組み立てたりしません。
+完了後の復習は `CompletionReviewService` が担当します。固定小テストとコード別AI小テストの
+公開・採点、完了条件の再確認、解説とAIレビューの公開、安全検査、履歴保存を一つの
+ユースケース境界に集めます。UIや各プロバイダが独自に完了を判断したり、正解情報を
+組み立てたりしません。
 
 ## 状態の分類
 
@@ -33,7 +34,8 @@ OpenAI、Gemma、Gemini固有のSDKとHTTP処理は `infrastructure/` に閉じ�
 | `ProblemProgress` | `learning_logs/<profile>.json` | 提出・ヒント・AC・ギブアップの学習事実 | 完了、レポート、復習解禁 |
 | クラウド同意 | Gradioのブラウザセッション状態 | 今回の外部送信許可 | そのセッションの外部API呼び出し |
 | Tutor履歴 | `tutor_sessions/` | 完結した質問・回答の組 | 会話文脈の復元 |
-| 復習履歴 | `review_history/<profile>.sqlite3` | 小テスト結果と生成済みレビュー | 復習の再表示 |
+| 復習履歴 | `review_history/<profile>.sqlite3` | 小テスト結果、AI問題、生成済みレビュー | 復習の再表示 |
+| 固定小テスト解除 | 同SQLiteの`review_unlocks` | 固定5問を一度採点した事実 | 解説・AIレビューの公開 |
 
 ### `last_problem_id` が「利便性の状態」である理由
 
@@ -90,7 +92,10 @@ OpenAI、Gemma、Gemini固有のSDKとHTTP処理は `infrastructure/` に閉じ�
 全テストAC / 初回ギブアップ
   -> ProblemProgressを更新
   -> CompletionReviewServiceが完了条件を再確認
-    -> 固定解説と正解情報を除いた5問を公開
+    -> 正解情報を除いた固定5問を公開
+    -> 固定5問をすべて採点
+      -> 履歴とreview_unlocksを同一トランザクションで保存
+      -> 固定解説とAIレビュー操作を公開
     -> 現在コードからCodeReviewRequestを構築
       -> 外部送信ならセッション同意を再確認
       -> 選択中LearningProviderへ一回だけ要求
@@ -102,6 +107,10 @@ OpenAI、Gemma、Gemini固有のSDKとHTTP処理は `infrastructure/` に閉じ�
 公開サンプルACはこの流れを開始しません。小テスト採点では、送信された5個の選択肢IDを
 教材側の正解IDと照合し、採点後の詳細スナップショットを保存します。固定小テストは
 5問だけなので採点は `O(1)`、履歴表示は固定20件なので1ページのメモリ使用量も有界です。
+
+`review_unlocks` は容量整理される履歴レコードから分離します。一度成立した公開条件が
+履歴の削除によって失われないようにするためです。既存DBは保存済み固定小テスト履歴の
+最古日時から解除状態を補完します。
 
 SQLiteはプロフィールごとに一ファイルとし、WAL、`BEGIN IMMEDIATE`、5秒のbusy timeout、
 `synchronous=FULL`を使います。保存時はUTF-8 JSONエンベロープの論理サイズを加算し、

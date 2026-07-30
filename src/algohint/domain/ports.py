@@ -13,6 +13,8 @@ from algohint.domain.models import (
     LLMRequest,
     LLMResponse,
     LearningLog,
+    PersonalizedQuizAttempt,
+    PersonalizedQuizSet,
     Problem,
     Profile,
     ProfilePreferences,
@@ -98,6 +100,22 @@ class ReviewHistoryRepository(Protocol):
         problem_id: str,
         entry: CodeReviewEntry,
     ) -> ReviewQuotaStatus: ...
+
+    def save_personalized_quiz(
+        self,
+        profile_id: str,
+        problem_id: str,
+        quiz: PersonalizedQuizSet,
+    ) -> ReviewQuotaStatus: ...
+
+    def save_personalized_quiz_attempt(
+        self,
+        profile_id: str,
+        problem_id: str,
+        attempt: PersonalizedQuizAttempt,
+    ) -> ReviewQuotaStatus: ...
+
+    def authored_quiz_completed(self, profile_id: str, problem_id: str) -> bool: ...
 
     def list_records(
         self,

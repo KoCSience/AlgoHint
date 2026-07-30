@@ -1,17 +1,22 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import sqlite3
 
 from algohint.application.profile_service import ProfileService
 from algohint.domain.enums import (
     CodeReviewCategory,
     CompletionReason,
+    PersonalizedQuizMode,
     ReviewHistoryKind,
 )
 from algohint.domain.models import (
     CodeReviewEntry,
     CodeReviewPoint,
     GeneratedCodeReview,
+    PersonalizedQuizQuestion,
+    PersonalizedQuizSet,
+    QuizOption,
     QuizAttempt,
     StoredQuizFeedback,
 )
@@ -65,6 +70,32 @@ def make_code_review(reviewed_at: datetime, marker: str) -> CodeReviewEntry:
     )
 
 
+def make_personalized_quiz(generated_at: datetime) -> PersonalizedQuizSet:
+    questions = tuple(
+        PersonalizedQuizQuestion(
+            question_id=f"ai-q-{index}",
+            focus=CodeReviewCategory.EDGE_CASES,
+            prompt=f"コード固有の確認 {index}",
+            options=(
+                QuizOption(option_id=f"ai-q-{index}-o-1", text="選択肢A"),
+                QuizOption(option_id=f"ai-q-{index}-o-2", text="選択肢B"),
+                QuizOption(option_id=f"ai-q-{index}-o-3", text="選択肢C"),
+            ),
+            correct_option_id=f"ai-q-{index}-o-1",
+            explanation="境界条件を確認するためです。",
+        )
+        for index in range(3)
+    )
+    return PersonalizedQuizSet(
+        quiz_set_id="a" * 32,
+        generated_at=generated_at,
+        provider="fake",
+        model_name="fake-quiz",
+        mode=PersonalizedQuizMode.FIXED_3,
+        questions=questions,
+    )
+
+
 def make_repositories(tmp_path: Path):
     paths = DataPaths(tmp_path / "data")
     profiles = JsonProfileRepository(paths)
@@ -98,6 +129,80 @@ def test_quiz_attempt_round_trips_as_newest_first_snapshot(tmp_path: Path) -> No
     assert QuizAttempt.model_validate_json(records[0].payload_json) == newer
     assert status.used_bytes > 0
     assert not status.warning
+    assert repository.authored_quiz_completed(
+        profile.profile_id,
+        "l0_two_values",
+    )
+
+
+def test_personalized_quiz_uses_the_shared_bounded_history(tmp_path: Path) -> None:
+    paths, profiles, profile_service = make_repositories(tmp_path)
+    profile = profile_service.create_profile("AI小テスト")
+    repository = SqliteReviewHistoryRepository(paths, profiles)
+    quiz = make_personalized_quiz(datetime.now(UTC))
+
+    repository.save_personalized_quiz(profile.profile_id, "l0_two_values", quiz)
+    records = repository.list_records(
+        profile.profile_id,
+        "l0_two_values",
+        kind=ReviewHistoryKind.AI_QUIZ_SET.value,
+        limit=20,
+        offset=0,
+    )
+
+    assert len(records) == 1
+    assert PersonalizedQuizSet.model_validate_json(records[0].payload_json) == quiz
+    assert "source_code" not in records[0].payload_json
+
+
+def test_legacy_history_backfills_unlock_and_expands_kinds(tmp_path: Path) -> None:
+    paths, profiles, profile_service = make_repositories(tmp_path)
+    profile = profile_service.create_profile("移行対象")
+    paths.review_history_dir.mkdir(parents=True, exist_ok=True)
+    database = paths.review_history_dir / f"{profile.profile_id}.sqlite3"
+    attempt = make_attempt(datetime.now(UTC), "legacy")
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE history_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                problem_id TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('quiz_attempt', 'code_review')),
+                created_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_bytes INTEGER NOT NULL CHECK(payload_bytes > 0)
+            );
+            CREATE TABLE history_meta (
+                key TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
+            );
+            INSERT INTO history_meta(key, value) VALUES ('used_bytes', 1);
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO history_records(
+                problem_id, kind, created_at, payload_json, payload_bytes
+            ) VALUES (?, 'quiz_attempt', ?, ?, 1)
+            """,
+            (
+                "l0_two_values",
+                attempt.attempted_at.isoformat(),
+                attempt.model_dump_json(),
+            ),
+        )
+
+    repository = SqliteReviewHistoryRepository(paths, profiles)
+
+    assert repository.authored_quiz_completed(
+        profile.profile_id,
+        "l0_two_values",
+    )
+    repository.save_personalized_quiz(
+        profile.profile_id,
+        "l0_two_values",
+        make_personalized_quiz(datetime.now(UTC)),
+    )
 
 
 def test_quota_warns_and_prunes_oldest_record_for_only_that_profile(
@@ -151,6 +256,10 @@ def test_quota_warns_and_prunes_oldest_record_for_only_that_profile(
             kind=ReviewHistoryKind.QUIZ_ATTEMPT.value,
         )
         == 2
+    )
+    assert limited.authored_quiz_completed(
+        limited_profile.profile_id,
+        "l0_two_values",
     )
     assert (
         limited.count_records(

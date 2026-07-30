@@ -5,6 +5,7 @@ import pytest
 from algohint.application.completion_review_service import (
     CompletionRequiredError,
     CompletionReviewService,
+    QuizRequiredError,
 )
 from algohint.application.profile_service import ProfileService
 from algohint.application.submission_service import SubmissionService
@@ -83,6 +84,21 @@ def make_review_services(
     )
 
 
+def complete_authored_quiz(
+    reviews: CompletionReviewService,
+    problems: JsonProblemRepository,
+    profile_id: str,
+) -> None:
+    """Unlock post-quiz material through the same deterministic grading path."""
+
+    material = problems.get_review_material("l0_two_values")
+    reviews.grade(
+        profile_id,
+        "l0_two_values",
+        tuple(question.correct_option_id for question in material.questions),
+    )
+
+
 def test_sample_ac_does_not_unlock_completion_review(tmp_path: Path) -> None:
     reviews, submissions, _, profile_id = make_review_services(tmp_path)
 
@@ -116,6 +132,8 @@ def test_quiz_requires_completion_and_all_valid_answers(tmp_path: Path) -> None:
         reviews.grade(profile_id, "l0_two_values", correct_answers)
 
     submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+    with pytest.raises(QuizRequiredError):
+        reviews.get_explanation(profile_id, "l0_two_values")
     with pytest.raises(ValueError, match="5問すべて"):
         reviews.grade(profile_id, "l0_two_values", (*correct_answers[:-1], None))
 
@@ -126,14 +144,17 @@ def test_quiz_requires_completion_and_all_valid_answers(tmp_path: Path) -> None:
     assert all(item.correct for item in result.feedback)
     assert history.total_count == 1
     assert history.attempts[0].score == 5
+    assert reviews.view(profile_id, "l0_two_values").authored_quiz_completed
+    assert "二つの値" in reviews.get_explanation(profile_id, "l0_two_values")
 
 
 def test_code_review_requires_consent_and_persists_only_generated_feedback(
     tmp_path: Path,
 ) -> None:
     provider = FakeReviewProvider(sends_data_off_device=True)
-    reviews, submissions, _, profile_id = make_review_services(tmp_path, provider)
+    reviews, submissions, problems, profile_id = make_review_services(tmp_path, provider)
     submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+    complete_authored_quiz(reviews, problems, profile_id)
 
     with pytest.raises(PermissionError, match="同意"):
         reviews.generate_code_review(
@@ -167,8 +188,9 @@ def test_code_review_rejects_provider_output_that_repeats_source(
             return generated.model_copy(update={"algorithm_recap": request.source_code})
 
     provider = QuotingProvider()
-    reviews, submissions, _, profile_id = make_review_services(tmp_path, provider)
+    reviews, submissions, problems, profile_id = make_review_services(tmp_path, provider)
     submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+    complete_authored_quiz(reviews, problems, profile_id)
 
     with pytest.raises(RuntimeError, match="再掲"):
         reviews.generate_code_review(
@@ -183,8 +205,9 @@ def test_code_review_rejects_provider_output_that_repeats_source(
 
 def test_code_review_history_is_paginated_newest_first(tmp_path: Path) -> None:
     provider = FakeReviewProvider()
-    reviews, submissions, _, profile_id = make_review_services(tmp_path, provider)
+    reviews, submissions, problems, profile_id = make_review_services(tmp_path, provider)
     submissions.submit(profile_id, "l0_two_values", CORRECT_SOURCE, SubmissionMode.FULL)
+    complete_authored_quiz(reviews, problems, profile_id)
 
     for _ in range(21):
         reviews.generate_code_review(
