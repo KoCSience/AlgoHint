@@ -9,10 +9,15 @@
 - `hidden_tests.json`: Judge専用テストケース
 - `model_solution.py`: 教師モード専用の参照実装
 - `review.json`: 完了後に出す、作成者確認済みの選択式小テスト5問
+- `knowledge.json`: 公開要約、概念、検索語、review済みHTTPS source
 
 ヒントは、問題理解、計算量、方針、実装注意、デバッグ観点の順で少しずつ具体化します。完成コード、コードブロック、提出可能な疑似コード、「答えは」のような断定を含めません。
 
 各問題に少なくとも2件の公開サンプルと、最小値・最大値・境界・重複・存在しないケースなどを含む隠しテストを追加してください。
+
+`knowledge.json`へ模範解答、隠しtest、learner dataを含めません。source domainはGemma
+Serverの全体allowlistにも存在する必要があります。追加後は`algohint evaluate`で
+全15固定caseのcoverageを検証します。
 
 ## 復習小テスト
 

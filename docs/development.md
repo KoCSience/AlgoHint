@@ -44,6 +44,19 @@ uv run pytest -q \
 Playwright E2Eを実行します。Chrome DevTools MCPを含む検出範囲、導入、実行順序、
 失敗成果物は[E2Eデバッグガイド](e2e-debugging.md)を参照してください。
 
+根拠付き検索を変更した場合は、公開情報だけのprovider契約、同意拒否、履歴の
+データ最小化、固定15ケース評価に加え、ブラウザ上で同意が1回ごとに解除されることを
+確認します。
+
+```bash
+uv run pytest -q \
+  tests/test_research_integration.py \
+  tests/test_research_evaluation.py \
+  tests/test_gradio_api_e2e.py
+ALGOHINT_RUN_BROWSER_E2E=1 uv run pytest -q tests/test_browser_e2e.py
+uv run algohint --data-dir data evaluate --json
+```
+
 WSL 2でChrome MCPを利用する場合は、`node`だけでなく`npm`と`npx`もLinux版へ
 統一します。Windows PATHとの混在、mise Node 24、Chrome for Testing、Codex設定は
 [Chrome DevTools MCP導入ガイド](chrome-devtools-mcp.md#wsl-2のnode環境)を参照してください。
@@ -58,9 +71,11 @@ uvx pip-audit --requirement /tmp/algohint-runtime-requirements.txt
 ```
 
 新しい問題を追加したら、`data/problems/<problem_id>/` に `problem.json`、
-`samples.json`、`hidden_tests.json`、`model_solution.py`、`review.json` の5ファイルを作成し、
+`samples.json`、`hidden_tests.json`、`model_solution.py`、`review.json`、
+`knowledge.json`の6ファイルを作成し、
 `data/curriculum.json` の順序へIDを追加します。問題データを読み込むテスト、固定5問の
-検証、正解・境界・誤答のJudgeテストも追加してください。詳細は
+検証、正解・境界・誤答のJudgeテスト、レビュー済み知識源のURL・許可domain検証も
+追加してください。詳細は
 [教材作成ガイド](data-and-content-authoring.md)を参照してください。
 
 ## LLM設定と秘密情報

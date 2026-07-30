@@ -1,5 +1,11 @@
 # Gemma Server接続ガイド
 
+Grounded ResearchのExa API keyはAlgoHint hostではなくGPU hostの
+`${XDG_CONFIG_HOME:-$HOME/.config}/algohint-gemma-server/credentials`へ置きます。
+AlgoHintへ同期するのは`ALGOHINT_GEMMA_API_KEY`だけです。支払方法、Top up、
+Auto-rechargeを使用しない運用と月9ドルguardはstandalone serverの
+`docs/research.md`を参照してください。
+
 AlgoHintからGemma 4 12Bを利用するための、独立推論サーバーの初回配備、credentials、
 起動、SSH tunnel、障害切り分けを説明します。サーバーのsource、Hydra設定、API、
 controllerの正本は
@@ -33,8 +39,9 @@ AlgoHintは[release manifest](../config/gemma-server-release.conf)で、公開re
 | local SSH tunnel | `127.0.0.1:18000`                                        |
 | install root     | `$HOME/programs/algohint-gemma-server`                   |
 
-Gemma Serverは`/healthz`、`/v1/models`、`/v1/hints`、`/v1/reviews`、
-`/v1/quizzes`だけを提供します。生成APIはBearer認証と1件の共通lockを使い、prompt、
+Gemma Serverは`/healthz`、通常生成APIに加えて`/v1/research/status`、
+`/v1/research/usage`、`/v1/research`を提供します。生成APIはBearer認証と1件の
+共通lockを使い、prompt、
 learner code、model出力、credentialをlog/statusへ保存しません。完全な契約は
 [standalone API guide](https://github.com/KoCSience/AlgoHint-Gemma-Server/blob/main/docs/api.md)
 を参照してください。

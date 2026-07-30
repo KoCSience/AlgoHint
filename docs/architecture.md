@@ -18,6 +18,11 @@ Gradio UI
 OpenAI、Gemma、Gemini固有のSDKとHTTP処理は `infrastructure/` に閉じ込めます。
 詳しい信頼境界は[適応型ヒントとLLM設計](llm-hint-design.md)を参照してください。
 
+Exa Grounded Researchは`ResearchProvider`からprivate Gemma Serverへ委譲し、API key、
+予算、検索I/Oをclientから分離します。問題別knowledge、profile別history、UI同意、
+評価は既存Judge・hint flowと独立させ、検索停止時にも必須課題を継続します。詳細は
+[Grounded Web Researchと評価](research-and-evaluation.md)を参照してください。
+
 完了後の復習は `CompletionReviewService` が担当します。固定小テストとコード別AI小テストの
 公開・採点、完了条件の再確認、解説とAIレビューの公開、安全検査、履歴保存を一つの
 ユースケース境界に集めます。UIや各プロバイダが独自に完了を判断したり、正解情報を
@@ -35,6 +40,7 @@ OpenAI、Gemma、Gemini固有のSDKとHTTP処理は `infrastructure/` に閉じ�
 | クラウド同意 | Gradioのブラウザセッション状態 | 今回の外部送信許可 | そのセッションの外部API呼び出し |
 | Tutor履歴 | `tutor_sessions/` | 完結した質問・回答の組 | 会話文脈の復元 |
 | 復習履歴 | `review_history/<profile>.sqlite3` | 小テスト結果、AI問題、生成済みレビュー | 復習の再表示 |
+| Research履歴 | `research_history/<profile>.sqlite3` | 引用、trace、費用状態、最終ヒント | 根拠と実測評価 |
 | 固定小テスト解除 | 同SQLiteの`review_unlocks` | 固定5問を一度採点した事実 | 解説・AIレビューの公開 |
 
 ### `last_problem_id` が「利便性の状態」である理由

@@ -1,0 +1,17 @@
+[
+  {"case_id": "two-values-wa", "problem_id": "l0_two_values", "judge_status": "WA", "expected_focus": "文字列ではなく整数として入力を扱う"},
+  {"case_id": "two-values-tle", "problem_id": "l0_two_values", "judge_status": "TLE", "expected_focus": "不要な反復がないか確認する"},
+  {"case_id": "two-values-ac", "problem_id": "l0_two_values", "judge_status": "AC", "expected_focus": "入力変換と加算の役割を説明する"},
+  {"case_id": "value-class-wa", "problem_id": "l1_value_class", "judge_status": "WA", "expected_focus": "0と30と31の境界を確認する"},
+  {"case_id": "value-class-tle", "problem_id": "l1_value_class", "judge_status": "TLE", "expected_focus": "定数個の条件分岐で十分と確認する"},
+  {"case_id": "value-class-ac", "problem_id": "l1_value_class", "judge_status": "AC", "expected_focus": "相互に重ならない条件の作り方を説明する"},
+  {"case_id": "range-sum-wa", "problem_id": "l1_range_sum", "judge_status": "WA", "expected_focus": "rangeの終点とNを含むか確認する"},
+  {"case_id": "range-sum-tle", "problem_id": "l1_range_sum", "judge_status": "TLE", "expected_focus": "反復回数とO(N)を確認する"},
+  {"case_id": "range-sum-ac", "problem_id": "l1_range_sum", "judge_status": "AC", "expected_focus": "累積値の不変条件を説明する"},
+  {"case_id": "first-match-wa", "problem_id": "l2_first_match", "judge_status": "WA", "expected_focus": "最初の一致と1始まり位置を確認する"},
+  {"case_id": "first-match-tle", "problem_id": "l2_first_match", "judge_status": "TLE", "expected_focus": "線形探索のO(N)を確認する"},
+  {"case_id": "first-match-ac", "problem_id": "l2_first_match", "judge_status": "AC", "expected_focus": "早期終了と未発見時の扱いを説明する"},
+  {"case_id": "frequency-wa", "problem_id": "l3_frequency_count", "judge_status": "WA", "expected_focus": "出現回数から追加される組数を確認する"},
+  {"case_id": "frequency-tle", "problem_id": "l3_frequency_count", "judge_status": "TLE", "expected_focus": "全組比較と頻度集計の計算量を比較する"},
+  {"case_id": "frequency-ac", "problem_id": "l3_frequency_count", "judge_status": "AC", "expected_focus": "辞書による頻度集計と組合せの関係を説明する"}
+]

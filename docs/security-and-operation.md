@@ -1,5 +1,16 @@
 # 安全な運用
 
+## Grounded Research
+
+Exa API keyはAlgoHint processへ渡さず、GPU hostのGemma Serverだけが保持します。
+Research requestはreview済みの公開問題要約・概念・許可domain・一般化Judge状態に限定し、
+source code、質問、profile、履歴、隠しtestを型から除外します。専用同意は1回の呼出し後に
+解除されます。検索停止時は既存のJudge、author hint、小テストへfallbackします。
+
+保存するResearch履歴は最終hint、citation、有限trace、件数、費用状態だけで、生の
+Highlightsとcredentialを含みません。詳細は
+[Grounded Web Researchと評価](research-and-evaluation.md)を参照してください。
+
 LocalJudgeは `shell=False`、一時ディレクトリ、`python -I`、タイムアウト、出力上限、POSIX環境でのCPU・メモリ上限を用います。これは学習時の事故を減らすための対策であり、悪意あるコードを完全に隔離するサンドボックスではありません。
 
 Docker構成では、非rootユーザー、読み取り専用ルートファイルシステム、capability削除、権限昇格防止、PID・CPU・メモリ・一時領域の上限を追加します。ポートは`127.0.0.1`だけへ公開し、永続書き込み先を学習ログ用ボリュームに限定します。これらはホストへの影響と偶発的な資源枯渇を軽減する多層防御です。

@@ -12,22 +12,34 @@ from algohint.application.exercise_selection_service import ExerciseSelectionSer
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
 from algohint.application.profile_service import ProfileService
+from algohint.application.research_service import GroundedResearchService
+from algohint.application.research_evaluation_service import ResearchEvaluationService
 from algohint.application.submission_service import SubmissionService
 from algohint.application.tutor_service import TutorService
-from algohint.domain.enums import HintProviderId
+from algohint.domain.enums import GemmaBackend, HintProviderId
 from algohint.infrastructure.filesystem_paths import DataPaths
 from algohint.infrastructure.hint_provider_factory import build_hint_providers
 from algohint.infrastructure.gemini_hint_provider import GeminiHintProvider
 from algohint.infrastructure.json_learning_log_repository import JsonLearningLogRepository
+from algohint.infrastructure.json_knowledge_base_repository import (
+    JsonKnowledgeBaseRepository,
+)
 from algohint.infrastructure.json_profile_repository import JsonProfileRepository
 from algohint.infrastructure.json_problem_repository import JsonProblemRepository
+from algohint.infrastructure.json_research_evaluation_case_repository import (
+    JsonResearchEvaluationCaseRepository,
+)
 from algohint.infrastructure.json_tutor_session_repository import (
     JsonTutorSessionRepository,
 )
 from algohint.infrastructure.local_judge_runner import LocalJudgeRunner
+from algohint.infrastructure.gemma_research_provider import GemmaResearchProvider
 from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvider
 from algohint.infrastructure.sqlite_review_history_repository import (
     SqliteReviewHistoryRepository,
+)
+from algohint.infrastructure.sqlite_research_history_repository import (
+    SqliteResearchHistoryRepository,
 )
 from algohint.ui.gradio_app import build_app
 from algohint.ui.view_models import ApplicationServices
@@ -67,6 +79,20 @@ def _parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="Show redacted exception details when running in development",
+    )
+    evaluate = commands.add_parser(
+        "evaluate",
+        help="Evaluate fixed research coverage and optional recorded profile runs",
+    )
+    evaluate.add_argument(
+        "--profile-id",
+        default=None,
+        help="Include the selected local profile's persisted Research runs",
+    )
+    evaluate.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable metrics",
     )
     return parser
 
@@ -160,6 +186,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     problems = JsonProblemRepository(paths)
     profile_repository = JsonProfileRepository(paths)
     logs = JsonLearningLogRepository(paths, profile_repository)
+    research_history = SqliteResearchHistoryRepository(paths, profile_repository)
+    knowledge = JsonKnowledgeBaseRepository(paths)
+    if args.command == "evaluate":
+        import json
+
+        report = ResearchEvaluationService(
+            problems,
+            knowledge,
+            JsonResearchEvaluationCaseRepository(paths),
+            research_history,
+        ).evaluate(args.profile_id)
+        payload = report.__dict__
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        else:
+            for name, value in payload.items():
+                print(f"{name}: {value}")
+        return
     tutor_sessions = JsonTutorSessionRepository(paths)
     providers = build_hint_providers(config)
     profile_service = ProfileService(
@@ -190,8 +234,24 @@ def main(argv: Sequence[str] | None = None) -> None:
             RuleBasedHintProvider(),
         ),
         completions=CompletionService(logs),
-        reports=LearningReportService(problems, logs),
+        reports=LearningReportService(problems, logs, research_history),
         teacher_repository=problems,
+        research=(
+            GroundedResearchService(
+                problems,
+                knowledge,
+                profile_repository,
+                logs,
+                GemmaResearchProvider(
+                    config.gemma_base_url,
+                    timeout_seconds=config.local_timeout_seconds,
+                ),
+                research_history,
+            )
+            if config.gemma_backend is GemmaBackend.TRANSFORMERS_HTTP
+            and config.gemma_base_url
+            else None
+        ),
     )
     if args.share:
         print(

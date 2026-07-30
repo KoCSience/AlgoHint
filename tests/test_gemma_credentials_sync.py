@@ -28,6 +28,7 @@ def remote_credentials(home: Path, *, mode: int = 0o600) -> Path:
         "\n".join(
             (
                 f"ALGOHINT_GEMMA_API_KEY={API_KEY}",
+                "EXA_API_KEY=server-only-exa-search-key",
                 "HF_TOKEN=server-only-hugging-face-token",
                 "ALGOHINT_GEMMA_MODEL_REVISION=server-only-legacy-revision",
                 "",
@@ -99,6 +100,7 @@ def test_sync_copies_only_api_key_with_private_permissions(tmp_path: Path) -> No
     assert credentials.stat().st_mode & 0o777 == 0o600
     assert credentials.parent.stat().st_mode & 0o777 == 0o700
     assert "HF_TOKEN" not in credentials.read_text(encoding="utf-8")
+    assert "EXA_API_KEY" not in credentials.read_text(encoding="utf-8")
     assert "MODEL_REVISION" not in credentials.read_text(encoding="utf-8")
     assert API_KEY not in completed.stdout + completed.stderr
 

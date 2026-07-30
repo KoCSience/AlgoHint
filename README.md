@@ -16,6 +16,8 @@ AlgoHint Coach は、完成コードを先に示さず、段階的ヒントと�
 - 全テストAC済みコードから2〜5問（または3問固定）を作る任意のAI小テスト
 - プロフィール別SQLiteへ保存する、容量制御・ページング付き復習履歴
 - ローカルプロフィール別の学習ログと苦手タグレポート
+- Exa通常Search・引用・予算表示を備えた、明示同意式の根拠付きWebヒント
+- 15固定caseと保存済み実行を使うResearch品質評価
 - 通常画面から分離した教師モード
 
 `last_problem_id` は進捗ではなく、次回同じ問題へ戻るためだけの利便性状態です。
@@ -23,6 +25,9 @@ AlgoHint Coach は、完成コードを先に示さず、段階的ヒントと�
 ギブアップで判断します。詳しい状態分類と処理フローは
 [アーキテクチャ](docs/architecture.md#状態の分類)、教材の小テスト形式は
 [教材作成ガイド](docs/data-and-content-authoring.md#復習小テスト)を参照してください。
+Web検索の構造、評価指標、送信情報は
+[Grounded Web Researchと評価](docs/research-and-evaluation.md)、画像入力の発展設計は
+[画像入力の実装可能性設計](docs/image-input-design.md)を参照してください。
 
 ## 初回設定
 
