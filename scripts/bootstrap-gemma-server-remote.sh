@@ -35,6 +35,18 @@ if ! command -v git >/dev/null 2>&1; then
     echo "git is required on the Gemma Server host." >&2
     exit 2
 fi
+if command -v uv >/dev/null 2>&1; then
+    uv_bin="$(command -v uv)"
+elif [[ -x "$HOME/.local/bin/uv" ]]; then
+    # Non-interactive SSH commonly omits the per-user binary directory even
+    # though the reviewed uv installer placed the pinned tool there.
+    uv_bin="$HOME/.local/bin/uv"
+else
+    echo "uv is required on the Gemma Server host." >&2
+    exit 2
+fi
+uv_bin_dir="$(dirname -- "$uv_bin")"
+export PATH="$uv_bin_dir:$PATH"
 
 source_parent="$(dirname -- "$source_cache")"
 install -d -m 700 "$source_parent"

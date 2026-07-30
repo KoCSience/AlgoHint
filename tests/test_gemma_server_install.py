@@ -181,3 +181,46 @@ def test_remote_bootstrap_refuses_cache_with_different_origin(tmp_path: Path) ->
 
     assert completed.returncode == 2
     assert "origin does not match" in completed.stderr
+
+
+def test_remote_bootstrap_resolves_user_uv_outside_noninteractive_path(
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    git(origin, "init", "-q")
+    git(origin, "config", "user.name", "Test")
+    git(origin, "config", "user.email", "test@example.invalid")
+    deploy_log = tmp_path / "deploy.log"
+    write_executable(
+        origin / "scripts" / "deploy-release.sh",
+        'printf "uv=%s\\n" "$(command -v uv)" > "$TEST_DEPLOY_LOG"\n',
+    )
+    git(origin, "add", "scripts/deploy-release.sh")
+    git(origin, "commit", "-q", "-m", "test user uv")
+    commit = git(origin, "rev-parse", "HEAD")
+    remote_home = tmp_path / "remote-home"
+    user_uv = remote_home / ".local" / "bin" / "uv"
+    write_executable(user_uv, "exit 0\n")
+
+    completed = subprocess.run(
+        [
+            str(REMOTE_BOOTSTRAP),
+            str(origin),
+            commit,
+            str(tmp_path / "install"),
+            str(tmp_path / "cache" / "source.git"),
+        ],
+        env={
+            **os.environ,
+            "HOME": str(remote_home),
+            "PATH": "/usr/bin:/bin",
+            "TEST_DEPLOY_LOG": str(deploy_log),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert deploy_log.read_text(encoding="utf-8") == f"uv={user_uv}\n"

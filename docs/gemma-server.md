@@ -305,6 +305,7 @@ doctorはprompt、問題文、codeを送らず、`/v1/models`でbackend、model 
 | `server-control.sh: そのようなファイルやディレクトリはありません` | standalone release未配備または`current`未作成。手順2を実行         |
 | installerのfetch失敗                                              | manifest SHAが未公開、network、GitHub到達性。別SHAへfallbackしない |
 | source cache origin不一致                                         | 既存cacheが別repo。内容を確認し、自動上書きしない                  |
+| 非対話SSHで`uv`が見つからない                                    | `uv`をPATHまたはGPU hostの`$HOME/.local/bin/uv`へ導入              |
 | preflightのCUDA/GPU失敗                                           | driver、PyTorch、`CUDA_VISIBLE_DEVICES`、GPU割当を確認             |
 | credentials権限失敗                                               | owner、通常file、mode 600を確認。内容は表示しない                  |
 | `loading_model`が継続                                             | cache、disk I/O、VRAM、safe log metadataを確認                     |
