@@ -1,0 +1,16 @@
+services:
+  app:
+    # Docker Desktop's host network belongs to its Linux VM, not the WSL
+    # distribution that owns the SSH tunnel or the browser-facing loopback.
+    network_mode: bridge
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 127.0.0.1:7860:7860
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "7860"
+      - --data-dir
+      - /opt/algohint/data

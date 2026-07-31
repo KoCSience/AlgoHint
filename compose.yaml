@@ -1,0 +1,46 @@
+name: algohint
+
+services:
+  app:
+    image: algohint:local
+    build:
+      context: .
+      target: runtime
+    init: true
+    restart: unless-stopped
+    ports:
+      # Keep arbitrary-code execution reachable from this computer only.
+      - "127.0.0.1:7860:7860"
+    environment:
+      # Values are inherited from the launching shell; Compose does not read a
+      # project secret file or bake credentials into the image.
+      - ALGOHINT_ENV
+      - ALGOHINT_LLM_PROVIDER
+      - ALGOHINT_OPENAI_MODEL
+      - ALGOHINT_GEMINI_MODEL
+      - ALGOHINT_GEMMA_MODEL
+      - ALGOHINT_GEMMA_BASE_URL
+      - ALGOHINT_GEMMA_BACKEND
+      - ALGOHINT_GEMMA_DEPLOYMENT
+      - ALGOHINT_GEMMA_TIMEOUT_SECONDS
+      - OPENAI_API_KEY
+      - GEMINI_API_KEY
+      - ALGOHINT_GEMMA_API_KEY
+    volumes:
+      - runtime-data:/opt/algohint/data/runtime
+    read_only: true
+    tmpfs:
+      # Judge source, bytecode, and Gradio's transient files must not persist.
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    stop_grace_period: 10s
+
+volumes:
+  runtime-data:
+    name: algohint-runtime

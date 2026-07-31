@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "question_id": "algorithm-prior-count",
+      "topic": "algorithm",
+      "prompt": "左から値xを読むとき、新しく増える同値ペア数は何に等しいですか？",
+      "options": [
+        {"option_id": "previous-x", "text": "それ以前にxが現れた回数"},
+        {"option_id": "all-previous", "text": "それ以前の要素数すべて"},
+        {"option_id": "remaining", "text": "まだ読んでいない要素数"}
+      ],
+      "correct_option_id": "previous-x",
+      "explanation": "現在位置と組を作れるのは、過去に現れた同じ値の各位置です。"
+    },
+    {
+      "question_id": "framing-count-pairs",
+      "topic": "problem_framing",
+      "prompt": "この問題で数える対象として正しいものはどれですか？",
+      "options": [
+        {"option_id": "index-pairs", "text": "値が等しい異なる位置の組"},
+        {"option_id": "distinct-values", "text": "異なる値の種類数"},
+        {"option_id": "equal-neighbors", "text": "隣り合う同値要素だけ"}
+      ],
+      "correct_option_id": "index-pairs",
+      "explanation": "値の種類ではなく、条件を満たす位置(i, j)の組を数えます。"
+    },
+    {
+      "question_id": "complexity-dictionary",
+      "topic": "complexity",
+      "prompt": "辞書で出現回数を管理する実装の平均時間計算量はどれですか？",
+      "options": [
+        {"option_id": "linear", "text": "O(N)"},
+        {"option_id": "quadratic", "text": "O(N^2)"},
+        {"option_id": "factorial", "text": "O(N!)"}
+      ],
+      "correct_option_id": "linear",
+      "explanation": "各要素につき平均O(1)の辞書操作を定数回行うため、全体は平均O(N)です。"
+    },
+    {
+      "question_id": "edge-all-same",
+      "topic": "edge_cases",
+      "prompt": "組数が大きくなり、更新順序を確認しやすいケースはどれですか？",
+      "options": [
+        {"option_id": "all-same", "text": "すべての要素が同じ"},
+        {"option_id": "all-distinct", "text": "すべての要素が異なる"},
+        {"option_id": "single", "text": "要素が一つだけ"}
+      ],
+      "correct_option_id": "all-same",
+      "explanation": "すべて同じ場合は0,1,2,…と増分が増え、数え上げの順序を追いやすくなります。"
+    },
+    {
+      "question_id": "implementation-update-order",
+      "topic": "implementation",
+      "prompt": "現在値xを処理するときの正しい更新順序はどれですか？",
+      "options": [
+        {"option_id": "add-then-increment", "text": "過去のxの回数を答えへ加え、その後で回数を1増やす"},
+        {"option_id": "increment-then-add", "text": "回数を1増やしてから、その回数を答えへ加える"},
+        {"option_id": "reset-each-time", "text": "xの回数を毎回0へ戻す"}
+      ],
+      "correct_option_id": "add-then-increment",
+      "explanation": "現在位置自身との組を数えないよう、過去の回数を使ってから現在分を記録します。"
+    }
+  ]
+}

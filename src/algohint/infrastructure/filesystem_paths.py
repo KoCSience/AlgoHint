@@ -28,3 +28,39 @@ class DataPaths:
     @property
     def logs_dir(self) -> Path:
         return self.runtime_dir / "learning_logs"
+
+    @property
+    def tutor_sessions_dir(self) -> Path:
+        """Keep free-form tutoring text separate from aggregate progress."""
+
+        return self.runtime_dir / "tutor_sessions"
+
+    @property
+    def review_history_dir(self) -> Path:
+        """Use one bounded SQLite database per profile for detailed review history."""
+
+        return self.runtime_dir / "review_history"
+
+    @property
+    def code_history_dir(self) -> Path:
+        """Keep retained learner source separate from source-free learning logs."""
+
+        return self.runtime_dir / "code_history"
+
+    @property
+    def research_history_dir(self) -> Path:
+        """Keep grounded-search history private and separate from authored content."""
+
+        return self.runtime_dir / "research_history"
+
+    @property
+    def research_evaluation_file(self) -> Path:
+        """Return the versioned fixed-case dataset used by offline evaluation."""
+
+        return self.data_dir / "evaluation" / "research-cases.json"
+
+    @property
+    def research_evaluation_runs_file(self) -> Path:
+        """Keep live benchmark evidence outside versioned teaching content."""
+
+        return self.runtime_dir / "research_evaluation" / "runs.sqlite3"

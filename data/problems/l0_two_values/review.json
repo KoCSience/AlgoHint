@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "question_id": "algorithm-operation",
+      "topic": "algorithm",
+      "prompt": "この問題で必要な中心処理はどれですか？",
+      "options": [
+        {"option_id": "add-once", "text": "二つの整数を読み取り、一度だけ加算する"},
+        {"option_id": "sort-values", "text": "二つの値を並べ替えてから出力する"},
+        {"option_id": "repeat-add", "text": "値の大きさだけ加算を繰り返す"}
+      ],
+      "correct_option_id": "add-once",
+      "explanation": "入力された二値を整数へ変換し、一度だけ加算すれば目的を満たします。"
+    },
+    {
+      "question_id": "framing-input-output",
+      "topic": "problem_framing",
+      "prompt": "実装前に最初に整理すべき対応はどれですか？",
+      "options": [
+        {"option_id": "two-in-one-out", "text": "入力は二つの整数、出力はその和一つ"},
+        {"option_id": "one-in-two-out", "text": "入力は一つ、出力は二つ"},
+        {"option_id": "unknown-count", "text": "入力個数は実行するまで分からない"}
+      ],
+      "correct_option_id": "two-in-one-out",
+      "explanation": "入力と出力の個数・型を先に整理すると、不要な処理を避けられます。"
+    },
+    {
+      "question_id": "complexity-constant",
+      "topic": "complexity",
+      "prompt": "この処理の時間計算量として最も適切なものはどれですか？",
+      "options": [
+        {"option_id": "constant", "text": "O(1)"},
+        {"option_id": "linear", "text": "O(N)"},
+        {"option_id": "quadratic", "text": "O(N^2)"}
+      ],
+      "correct_option_id": "constant",
+      "explanation": "入力サイズに応じた繰り返しがなく、演算回数は一定です。"
+    },
+    {
+      "question_id": "edge-negative",
+      "topic": "edge_cases",
+      "prompt": "型変換や符号の扱いを確認しやすいテストはどれですか？",
+      "options": [
+        {"option_id": "negative-mix", "text": "-3 5"},
+        {"option_id": "same-positive", "text": "1 1"},
+        {"option_id": "missing-value", "text": "1"}
+      ],
+      "correct_option_id": "negative-mix",
+      "explanation": "負数を含む入力は、文字列連結や符号処理の誤りを見つけやすくします。"
+    },
+    {
+      "question_id": "implementation-conversion",
+      "topic": "implementation",
+      "prompt": "Pythonで加算前に注意すべき点はどれですか？",
+      "options": [
+        {"option_id": "convert-int", "text": "分割した文字列を整数へ変換する"},
+        {"option_id": "strip-minus", "text": "負号を削除してから計算する"},
+        {"option_id": "use-global", "text": "入力値をグローバル変数へ保存する"}
+      ],
+      "correct_option_id": "convert-int",
+      "explanation": "入力は文字列なので、数値計算の前に整数へ変換する必要があります。"
+    }
+  ]
+}

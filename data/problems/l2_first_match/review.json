@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "question_id": "algorithm-stop-first",
+      "topic": "algorithm",
+      "prompt": "最初の一致位置を求める走査で重要な動作はどれですか？",
+      "options": [
+        {"option_id": "stop-on-match", "text": "先頭から調べ、最初の一致で終了する"},
+        {"option_id": "count-all", "text": "一致数だけ数えて位置は保存しない"},
+        {"option_id": "sort-before", "text": "配列を並べ替えてから探す"}
+      ],
+      "correct_option_id": "stop-on-match",
+      "explanation": "元の順序における最初の位置が必要なので、先頭から走査して最初の一致で確定します。"
+    },
+    {
+      "question_id": "framing-position-base",
+      "topic": "problem_framing",
+      "prompt": "問題文から実装へ移す際に確認すべき位置の規則はどれですか？",
+      "options": [
+        {"option_id": "one-based-output", "text": "出力位置は1始まり"},
+        {"option_id": "zero-based-output", "text": "出力位置は0始まり"},
+        {"option_id": "value-output", "text": "位置ではなく一致した値を出す"}
+      ],
+      "correct_option_id": "one-based-output",
+      "explanation": "Pythonの添字と問題が要求する位置の基準が異なるため、変換が必要です。"
+    },
+    {
+      "question_id": "complexity-linear",
+      "topic": "complexity",
+      "prompt": "線形探索の最悪時間計算量はどれですか？",
+      "options": [
+        {"option_id": "linear", "text": "O(N)"},
+        {"option_id": "constant", "text": "O(1)"},
+        {"option_id": "quadratic", "text": "O(N^2)"}
+      ],
+      "correct_option_id": "linear",
+      "explanation": "一致がない、または末尾にある場合はN要素すべてを一度ずつ調べます。"
+    },
+    {
+      "question_id": "edge-duplicate",
+      "topic": "edge_cases",
+      "prompt": "「最初の一致」を特に確認できるテストはどれですか？",
+      "options": [
+        {"option_id": "duplicate-target", "text": "対象値が複数回現れる配列"},
+        {"option_id": "single-nontarget", "text": "対象値がない要素一つの配列"},
+        {"option_id": "all-distinct-no-target", "text": "対象値がない異なる値の配列"}
+      ],
+      "correct_option_id": "duplicate-target",
+      "explanation": "複数一致があるケースで、後ろの位置へ上書きしていないか確認できます。"
+    },
+    {
+      "question_id": "implementation-not-found",
+      "topic": "implementation",
+      "prompt": "対象が見つからない場合を安全に扱う方法はどれですか？",
+      "options": [
+        {"option_id": "default-minus-one", "text": "結果を-1で初期化し、一致時だけ更新する"},
+        {"option_id": "last-index", "text": "常に最後の添字を返す"},
+        {"option_id": "omit-output", "text": "何も出力しない"}
+      ],
+      "correct_option_id": "default-minus-one",
+      "explanation": "要求された未発見値を初期値にすると、未発見経路も明示的に扱えます。"
+    }
+  ]
+}

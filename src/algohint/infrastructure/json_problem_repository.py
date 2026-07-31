@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from algohint.domain.enums import TestVisibility
-from algohint.domain.models import Problem, TestCase
+from algohint.domain.models import Problem, ReviewMaterial, TestCase
 from algohint.infrastructure.filesystem_paths import DataPaths
 
 
@@ -32,7 +32,11 @@ class JsonProblemRepository:
             return json.load(file)
 
     def list_problems(self) -> list[Problem]:
-        return [self.get_problem(path.name) for path in sorted(self._paths.problems_dir.iterdir()) if path.is_dir()]
+        return [
+            self.get_problem(path.name)
+            for path in sorted(self._paths.problems_dir.iterdir())
+            if path.is_dir()
+        ]
 
     def get_problem(self, problem_id: str) -> Problem:
         path = self._problem_dir(problem_id) / "problem.json"
@@ -42,12 +46,16 @@ class JsonProblemRepository:
 
     def get_tests(self, problem_id: str, include_hidden: bool) -> list[TestCase]:
         directory = self._problem_dir(problem_id)
-        samples = TypeAdapter(list[TestCase]).validate_python(self._read_json(directory / "samples.json"))
+        samples = TypeAdapter(list[TestCase]).validate_python(
+            self._read_json(directory / "samples.json")
+        )
         if any(case.visibility is not TestVisibility.SAMPLE for case in samples):
             raise ValueError(f"Sample file has non-sample case: {problem_id}")
         if not include_hidden:
             return samples
-        hidden = TypeAdapter(list[TestCase]).validate_python(self._read_json(directory / "hidden_tests.json"))
+        hidden = TypeAdapter(list[TestCase]).validate_python(
+            self._read_json(directory / "hidden_tests.json")
+        )
         if any(case.visibility is not TestVisibility.HIDDEN for case in hidden):
             raise ValueError(f"Hidden file has non-hidden case: {problem_id}")
         return [*samples, *hidden]
@@ -63,3 +71,11 @@ class JsonProblemRepository:
         if not isinstance(payload, list):
             raise ValueError("curriculum.json must be a list")
         return [dict(item) for item in payload if isinstance(item, dict)]
+
+    def get_review_material(self, problem_id: str) -> ReviewMaterial:
+        """Load answer-bearing review content only through the server repository."""
+
+        path = self._problem_dir(problem_id) / "review.json"
+        if not path.is_file():
+            raise KeyError(f"No review material: {problem_id}")
+        return ReviewMaterial.model_validate(self._read_json(path))

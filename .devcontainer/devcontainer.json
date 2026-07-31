@@ -1,0 +1,59 @@
+{
+    "name": "AlgoHint Development",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": "..",
+        "target": "development"
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "workspaceFolder": "/workspace",
+    "mounts": [
+        "source=algohint-dev-venv,target=/workspace/.venv,type=volume"
+    ],
+    "containerEnv": {
+        "UV_PROJECT_ENVIRONMENT": "/workspace/.venv",
+        "UV_CACHE_DIR": "/tmp/algohint-uv-cache",
+        "RUFF_CACHE_DIR": "/tmp/algohint-ruff-cache",
+        "MYPY_CACHE_DIR": "/tmp/algohint-mypy-cache",
+        "GRADIO_ANALYTICS_ENABLED": "False",
+        "ALGOHINT_ENV": "development",
+        "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}",
+        "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+        "ALGOHINT_GEMMA_API_KEY": "${localEnv:ALGOHINT_GEMMA_API_KEY}",
+        "ALGOHINT_GEMMA_BASE_URL": "${localEnv:ALGOHINT_GEMMA_BASE_URL}"
+    },
+    "remoteUser": "algohint",
+    "updateRemoteUserUID": true,
+    "runArgs": [
+        "--cpus=1",
+        "--memory=1g",
+        "--memory-swap=1536m",
+        "--pids-limit=256"
+    ],
+    "postCreateCommand": "/bin/sh .devcontainer/post-create.sh",
+    "forwardPorts": [
+        7860
+    ],
+    "portsAttributes": {
+        "7860": {
+            "label": "AlgoHint Gradio",
+            "onAutoForward": "notify"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+                "python.testing.pytestEnabled": true,
+                "python.testing.pytestArgs": [
+                    "tests"
+                ]
+            }
+        }
+    }
+}

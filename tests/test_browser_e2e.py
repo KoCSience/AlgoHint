@@ -1,0 +1,201 @@
+"""Opt-in Playwright regression for the rendered tutoring workspace."""
+
+import os
+import re
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from playwright.sync_api import Page, Request, expect
+
+from algohint.domain.enums import HintTrigger
+from tests.e2e_support import (
+    DeterministicGeminiProvider,
+    running_e2e_app,
+)
+
+pytestmark = [
+    pytest.mark.browser_e2e,
+    pytest.mark.skipif(
+        os.environ.get("ALGOHINT_RUN_BROWSER_E2E") != "1",
+        reason="set ALGOHINT_RUN_BROWSER_E2E=1 after installing Chromium",
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:.*future.no_silent_downcasting.*:pandas.errors.Pandas4Warning"
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:The copy keyword is deprecated.*:pandas.errors.Pandas4Warning"
+    ),
+]
+
+
+@pytest.fixture
+def browser_app(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[str, DeterministicGeminiProvider]]:
+    """Serve isolated real UI callbacks while keeping the LLM deterministic."""
+
+    monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "False")
+    with running_e2e_app(tmp_path / "browser-e2e-data") as (_, local_url, provider):
+        yield local_url, provider
+
+
+def _select_dropdown(page: Page, elem_id: str, option_name: str | re.Pattern[str]) -> None:
+    """Select a Gradio dropdown using stable application-owned IDs."""
+
+    dropdown = page.locator(f"#{elem_id}")
+    dropdown.get_by_role("combobox").click()
+    page.get_by_role("option", name=option_name).click()
+
+
+def _record_unexpected_failed_request(request: Request, failures: list[str]) -> None:
+    """Ignore Gradio's expected queue-stream reconnects, but retain real failures.
+
+    Gradio closes and reopens ``queue/data`` event streams after queued callbacks.
+    Chromium reports that normal lifecycle as ``requestfailed`` even though the
+    callback completed successfully and no HTTP error response occurred.
+    """
+
+    request_url = request.url
+    if "/gradio_api/queue/data" not in request_url:
+        failures.append(f"{request.method} {request_url}")
+
+
+def test_hint_coach_in_rendered_browser(
+    page: Page,
+    browser_app: tuple[str, DeterministicGeminiProvider],
+) -> None:
+    """Exercise consent, judge diagnostics, every hint trigger, and cleanup."""
+
+    local_url, provider = browser_app
+    console_errors: list[str] = []
+    failed_requests: list[str] = []
+    bad_responses: list[str] = []
+    page.on(
+        "console",
+        lambda message: console_errors.append(message.text) if message.type == "error" else None,
+    )
+    page.on(
+        "requestfailed",
+        lambda request: _record_unexpected_failed_request(request, failed_requests),
+    )
+    page.on(
+        "response",
+        lambda response: (
+            bad_responses.append(f"{response.status} {response.url}")
+            if response.url.startswith(local_url) and response.status >= 400
+            else None
+        ),
+    )
+
+    page.goto(local_url)
+    expect(page.get_by_role("heading", name="AlgoHint Coach")).to_be_visible()
+    expect(page.locator("#profile-selector").get_by_role("combobox")).to_have_value("開発テスト")
+    completion_tab = page.get_by_role("tab", name="完了後の小テスト")
+    expect(completion_tab).to_have_attribute(
+        "title",
+        "全テストACまたはギブアップ後に「完了後の小テスト」を利用できます。",
+    )
+    expect(completion_tab).to_have_attribute(
+        "aria-description",
+        "全テストACまたはギブアップ後に「完了後の小テスト」を利用できます。",
+    )
+    page.get_by_role("tab", name="問題演習").click()
+
+    _select_dropdown(
+        page,
+        "problem-selector",
+        re.compile("L0.*二つの数の合計"),
+    )
+    expect(page.get_by_text("二つの数の合計", exact=False).first).to_be_visible()
+
+    page.get_by_text("根拠付きWeb検索（Exa）", exact=True).click()
+    page.locator("#research-consent input").check()
+    page.locator("#request-grounded-research").click()
+    expect(page.locator("#research-result")).to_contain_text("根拠付きヒント")
+    expect(page.locator("#research-result")).to_contain_text("docs.python.org")
+    expect(page.locator("#research-consent input")).not_to_be_checked()
+    assert len(provider.research_requests) == 1
+
+    _select_dropdown(page, "provider-selector", "GPT-5.6")
+    expect(page.locator("#cloud-consent input")).not_to_be_checked()
+    _select_dropdown(page, "provider-selector", "Gemini")
+    expect(page.locator("#provider-status")).to_contain_text("利用可能")
+
+    page.locator("#cloud-consent input").check()
+    page.locator("#stuck-hint").click()
+    expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
+    expect(page.locator("#tutor-chat")).to_contain_text("gemini / gemini-e2e")
+
+    question = page.locator("#tutor-question textarea")
+    question.fill("どの変数を追えばよいですか？")
+    question.press("Enter")
+    expect(question).to_have_value("どの変数を追えばよいですか？\n")
+    question.press("Control+Enter")
+    expect(page.locator("#tutor-chat")).to_contain_text("どの変数を追えばよいですか？")
+    expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
+    expect(question).to_have_value("")
+
+    editor = page.locator("#code-editor .cm-content")
+    expect(editor).to_be_visible()
+    editor.fill("raise ValueError('visible sample failure')")
+    page.locator("#sample-submit").click()
+    expect(page.locator("#submission-result")).to_contain_text("RE")
+    expect(page.locator("#draft-status")).to_contain_text("保存済み")
+    page.get_by_text("提出コード履歴", exact=True).click()
+    history_selector = page.locator("#code-history-selector")
+    history_selector.get_by_role("combobox").click()
+    page.get_by_role("option", name=re.compile("公開サンプル:RE")).click()
+    expect(page.locator("#code-history-source")).to_contain_text("visible sample failure")
+    expect(page.locator("#code-history-result")).to_contain_text("公開サンプル: RE")
+
+    page.locator("#result-hint").click()
+    expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")
+    expect(page.locator("#tutor-chat")).to_contain_text("この実行結果についてヒントがほしい")
+    assert [request.trigger for request in provider.requests] == [
+        HintTrigger.STUCK,
+        HintTrigger.QUESTION,
+        HintTrigger.JUDGE_RESULT,
+    ]
+    assert provider.requests[-1].diagnostic_summary == "ValueError"
+    assert "visible sample failure" in (provider.requests[-1].diagnostic_details or "")
+
+    editor.fill("a, b = map(int, input().split())\nprint(a + b)")
+    page.locator("#full-submit").click()
+    expect(page.locator("#submission-result")).to_contain_text("AC")
+    expect(page.locator("#completion-banner")).to_contain_text("AC、おめでとうございます")
+    expect(page.locator("#personalized-quiz-status")).to_contain_text(
+        "AI小テスト2問を準備しました"
+    )
+    expect(page.locator("#current-code-review")).to_be_empty()
+    assert len(provider.quiz_requests) == 1
+    assert provider.review_requests == []
+
+    fixed_answers = (
+        ("#review-quiz-1", "二つの整数を読み取り、一度だけ加算する"),
+        ("#review-quiz-2", "入力は二つの整数、出力はその和一つ"),
+        ("#review-quiz-3", "O(1)"),
+        ("#review-quiz-4", "-3 5"),
+        ("#review-quiz-5", "分割した文字列を整数へ変換する"),
+    )
+    for radio_id, answer in fixed_answers:
+        page.locator(radio_id).get_by_text(answer, exact=True).click()
+    page.locator("#submit-review-quiz").click()
+    expect(page.locator("#review-quiz-result")).to_contain_text("5/5")
+    expect(page.locator("#personalized-quiz-1")).to_be_visible()
+
+    page.locator("#retry-code-review").click()
+    expect(page.locator("#current-code-review")).to_contain_text(
+        "アルゴリズムの復習"
+    )
+    assert len(provider.review_requests) == 1
+
+    page.get_by_role("tab", name="問題演習").click()
+    page.locator("#clear-tutor-history").click()
+    expect(page.locator("#tutor-status")).to_contain_text("クリア")
+    expect(page.locator("#tutor-chat")).not_to_contain_text("gemini / gemini-e2e")
+
+    assert console_errors == []
+    assert failed_requests == []
+    assert bad_responses == []

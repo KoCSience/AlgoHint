@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-07-30",
+  "problem_id": "l1_range_sum",
+  "public_summary": "正の整数Nについて1からNまでを両端を含めて処理し、累積した合計を出力する問題。",
+  "concepts": ["range", "accumulation", "loop boundary", "time complexity"],
+  "search_terms": ["Python range stop exclusive", "loop accumulation invariant"],
+  "sources": [
+    {
+      "title": "Built-in Types — Ranges",
+      "url": "https://docs.python.org/3/library/stdtypes.html#ranges",
+      "domain": "docs.python.org"
+    },
+    {
+      "title": "Python Tutorial — for Statements",
+      "url": "https://docs.python.org/3/tutorial/controlflow.html#for-statements",
+      "domain": "docs.python.org"
+    }
+  ]
+}

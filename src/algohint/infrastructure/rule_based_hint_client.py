@@ -20,5 +20,7 @@ class RuleBasedHintClient:
 
         authored = problem.hints[min(hint_count, len(problem.hints) - 1)]
         if status in self._status_advice:
-            return authored.model_copy(update={"text": f"{self._status_advice[status]}\n\n{authored.text}"})
+            return authored.model_copy(
+                update={"text": f"{self._status_advice[status]}\n\n{authored.text}"}
+            )
         return authored

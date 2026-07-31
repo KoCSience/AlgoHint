@@ -5,6 +5,14 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Recoverable local trash is never part of product source or publication.
+/_GARBAGE/
 
 # Virtual environments
 .venv
