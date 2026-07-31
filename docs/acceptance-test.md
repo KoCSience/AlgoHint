@@ -117,6 +117,7 @@
 - [ ] 起動後にhealthを3回連続で取得できない場合、remote serviceを自動再起動せず、UIとRuleBased fallbackを維持して警告を1回表示する。
 - [ ] Docker SSH stackがremote Docker Gemma、host tunnel、local AlgoHint containerを順に起動し、container内doctor成功後だけUIを開始する。
 - [ ] Docker SSH stackがSSH鍵をmountせず、既存remote containerを停止せず、自分が起動したremoteだけを既定cleanupする。
+- [ ] `--build-remote`が旧remote releaseを固定SHAへ導入して再検査し、flagなしではremoteを変更せず期待SHAと現在SHAを表示する。
 - [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
 - [ ] listener不在の`ConnectError`が`endpoint_unreachable`となり、502/503の`provider_unavailable`、timeout、401と区別される。

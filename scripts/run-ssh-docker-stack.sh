@@ -5,6 +5,8 @@ umask 077
 
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 compose_file="$project_root/compose.ssh.yaml"
+release_manifest="$project_root/config/gemma-server-release.conf"
+remote_installer="${ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT:-$project_root/scripts/install-gemma-server-ssh.sh}"
 # shellcheck source=scripts/lib/gemma-ssh-target.sh
 . "$project_root/scripts/lib/gemma-ssh-target.sh"
 # shellcheck source=scripts/lib/gemma-stack-health.sh
@@ -68,6 +70,18 @@ for executable in curl docker ssh; do
     fi
 done
 docker compose version >/dev/null
+if [[ ! -r "$release_manifest" ]]; then
+    echo "Gemma Server release manifest is missing: $release_manifest" >&2
+    exit 2
+fi
+expected_remote_commit="$(
+    sed -n "s/^ALGOHINT_GEMMA_SERVER_COMMIT='\\([0-9a-f]\\{40\\}\\)'$/\\1/p" \
+        "$release_manifest"
+)"
+if [[ ! "$expected_remote_commit" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Gemma Server release manifest has no valid full commit SHA." >&2
+    exit 2
+fi
 
 validate_credentials() {
     local credentials_mode
@@ -101,16 +115,6 @@ quote_remote() {
 }
 
 validate_credentials
-set -a
-# This owner-only file is intentionally executable shell configuration. Its
-# values are exported only to Compose and are never rendered into its YAML.
-. "$credentials_path"
-set +a
-# Reassert the launcher-owned route after loading credentials so stale values
-# cannot redirect learner data away from the verified loopback tunnel.
-export ALGOHINT_GEMMA_BACKEND="transformers_http"
-export ALGOHINT_GEMMA_DEPLOYMENT="remote"
-export ALGOHINT_GEMMA_BASE_URL="http://127.0.0.1:18000/v1"
 
 if [[ -n "${ALGOHINT_SSH_REMOTE_APP_ROOT:-}" ]]; then
     remote_app_root="$ALGOHINT_SSH_REMOTE_APP_ROOT"
@@ -136,6 +140,49 @@ health_url="http://127.0.0.1:$local_port/healthz"
 remote_control_command() {
     local action="$1"
     ssh -T "$ssh_target" "$quoted_control $(quote_remote "$action")"
+}
+
+read_remote_release() {
+    local quoted_release
+    quoted_release="$(quote_remote "$remote_app_root/current/RELEASE")"
+    ssh -T "$ssh_target" \
+        "if test -r $quoted_release; then sed -n 's/^commit=//p' $quoted_release; else printf 'missing\\n'; fi"
+}
+
+remote_controller_is_available() {
+    ssh -T "$ssh_target" "test -x $quoted_control"
+}
+
+ensure_remote_release() {
+    local actual_commit
+    actual_commit="$(read_remote_release)"
+    if [[ "$actual_commit" == "$expected_remote_commit" ]] &&
+        remote_controller_is_available; then
+        return
+    fi
+
+    if [[ "$build_remote" != true ]]; then
+        echo "Remote Gemma Docker release is not ready." >&2
+        echo "Expected commit: $expected_remote_commit" >&2
+        echo "Current commit: $actual_commit" >&2
+        echo "Retry with --build-remote to install and build the pinned release." >&2
+        exit 2
+    fi
+    if [[ ! -x "$remote_installer" ]]; then
+        echo "Pinned Gemma Server installer is missing: $remote_installer" >&2
+        exit 2
+    fi
+
+    echo "Installing pinned Gemma Server release on $ssh_target: $expected_remote_commit"
+    "$remote_installer"
+    actual_commit="$(read_remote_release)"
+    if [[ "$actual_commit" != "$expected_remote_commit" ]] ||
+        ! remote_controller_is_available; then
+        echo "Pinned Gemma Server installation did not produce the expected Docker controller." >&2
+        echo "Expected commit: $expected_remote_commit" >&2
+        echo "Current commit: $actual_commit" >&2
+        exit 2
+    fi
 }
 
 wait_for_tunnel() {
@@ -185,6 +232,7 @@ if docker container inspect "$container_name" >/dev/null 2>&1; then
     exit 2
 fi
 compose config --quiet
+ensure_remote_release
 if [[ "$build_local" == true ]]; then
     compose build app
 elif ! docker image inspect algohint:ssh-local >/dev/null 2>&1; then
@@ -192,19 +240,6 @@ elif ! docker image inspect algohint:ssh-local >/dev/null 2>&1; then
     exit 2
 fi
 
-if ssh -T "$ssh_target" "test -x $quoted_control"; then
-    :
-else
-    control_check_exit=$?
-    if ((control_check_exit == 255)); then
-        echo "Could not verify the remote Gemma Docker control script over SSH." >&2
-    else
-        echo "Remote Gemma Docker control script is missing or not executable." >&2
-        echo "Expected path: $remote_control" >&2
-        echo "Install the pinned Gemma Server release before using this launcher." >&2
-    fi
-    exit 2
-fi
 if [[ "$build_remote" == true ]]; then
     remote_control_command build
 fi
@@ -219,6 +254,17 @@ else
     printf '%s\n' "$remote_status" >&2
     exit 2
 fi
+
+# Load client credentials only after installation and image operations finish;
+# those steps neither need nor inherit provider secrets.
+set -a
+. "$credentials_path"
+set +a
+# Reassert the launcher-owned route after loading credentials so stale values
+# cannot redirect learner data away from the verified loopback tunnel.
+export ALGOHINT_GEMMA_BACKEND="transformers_http"
+export ALGOHINT_GEMMA_DEPLOYMENT="remote"
+export ALGOHINT_GEMMA_BASE_URL="http://127.0.0.1:18000/v1"
 
 ssh -N -T \
     -o ExitOnForwardFailure=yes \

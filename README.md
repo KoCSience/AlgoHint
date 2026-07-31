@@ -127,14 +127,18 @@ docker compose down
 `docker run`を使う手順、教師モード、Dev Container、データ管理は[Docker運用ガイド](docs/docker.md)を参照してください。
 
 remote GPU hostのDocker版Gemma、host所有のSSH tunnel、Docker版AlgoHintをまとめる
-場合は、初回だけremote imageも構築します。SSH鍵はAlgoHint containerへmountしません。
+場合は、初回だけ固定Gemma releaseの導入とremote image構築も行います。SSH鍵は
+AlgoHint containerへmountしません。
 
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-docker-stack.sh --build-remote
 ```
 
-2回目以降は`--build-remote`を外します。local imageの再構築も省略する場合だけ
+`--build-remote`はremote `current/RELEASE`をmanifestの固定SHAと照合し、古い場合は
+review済みinstallerで更新してからimageをbuildします。導入結果のSHAとDocker controllerを
+再検査し、一致しなければ起動しません。2回目以降は`--build-remote`を外します。
+local imageの再構築も省略する場合だけ
 `--no-build-local`を指定します。構造・前提・所有processのcleanupは
 [Docker運用ガイド](docs/docker.md#remote-docker-gemmaとの一括起動)を参照してください。
 

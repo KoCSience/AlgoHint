@@ -329,15 +329,16 @@ remote Gemmaを維持する場合は`--keep-remote`を指定します。
 
 ### AlgoHintとGemmaの両方をDockerで起動
 
-remote releaseがDocker対応commitであれば、host SSH tunnelを維持したままAlgoHintも
-container化できます。初回はremoteのcommit固定imageを構築します。
+host SSH tunnelを維持したままAlgoHintもcontainer化できます。初回はmanifestで固定した
+remote releaseを必要に応じて導入し、同じcommitのimageを構築します。
 
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-docker-stack.sh --build-remote
 ```
 
-以後は`--build-remote`を外します。この経路はremote
+`--build-remote`はremote `current/RELEASE`が固定SHAと異なる場合、既存installerを実行し、
+SHAとcontrollerを再検査してからbuildします。以後は`--build-remote`を外します。この経路はremote
 `current/scripts/docker-control.sh`の安定した`container: running|not-running`状態を
 使って所有権を判定します。native tmux Gemmaとの同時起動はremote controller側で
 拒否されます。SSH鍵はhostだけが使用し、containerにはAPI利用に必要なGemma keyだけを

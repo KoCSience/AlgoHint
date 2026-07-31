@@ -273,8 +273,9 @@ credentials fileに残った古いbackend、deployment、base URLで接続先が
 
 AlgoHintもDockerで動かす経路は`compose.ssh.yaml`と
 `scripts/run-ssh-docker-stack.sh`が担当します。変更時は、Compose展開後のloopback
-listenerとhost network、資格情報権限、remote `container: running|not-running`契約、
-既存remoteの非所有、doctor失敗時cleanupを`test_ssh_docker_stack.py`で検証します。
+listenerとhost network、資格情報権限、固定releaseの導入・再検査、remote
+`container: running|not-running`契約、既存remoteの非所有、doctor失敗時cleanupを
+`test_ssh_docker_stack.py`で検証します。
 
 doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
 成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を

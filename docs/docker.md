@@ -120,8 +120,9 @@ SSH接続と`127.0.0.1:18000` tunnelを所有し、AlgoHint containerはhost net
 そのloopbackへ接続します。SSH config、秘密鍵、agent socketはcontainerへ渡しません。
 AlgoHint UI自身も`127.0.0.1:7860`だけで待ち受けます。
 
-事前に固定SHAのGemma Server releaseとremote credentialsを導入し、API keyだけを
-AlgoHint hostへ同期します。初回はremote imageを含めて構築します。
+事前にremote credentialsを作成し、API keyだけをAlgoHint hostへ同期します。初回の
+`--build-remote`はremote releaseが古い、またはDocker controllerがない場合にmanifestの
+固定SHAを導入し、その結果を再検査してからremote imageを構築します。
 
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
@@ -135,10 +136,12 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-docker-stack.sh
 ```
 
-処理順は、local Compose検証・build、remote Docker controller検査・必要時start、SSH
-tunnel、ready待機、container内の認証付きdoctor、AlgoHint container、health monitor
-です。終了時はlocal containerとtunnelを停止し、remoteはこの起動で開始した場合だけ
-停止します。既存remoteを残す規則を変えず、新規remoteも残したい場合は
+処理順は、資格情報・Compose検証、remote release検査・必要時導入、local image build、
+remote image build・start、SSH tunnel、ready待機、container内の認証付きdoctor、
+AlgoHint container、health monitorです。`--build-remote`なしでreleaseが一致しない
+場合はremoteを変更せず、期待SHA、現在SHA、再実行方法を表示します。終了時はlocal
+containerとtunnelを停止し、remoteはこの起動で開始した場合だけ停止します。既存remoteを
+残す規則を変えず、新規remoteも残したい場合は
 `--keep-remote`を使います。local sourceに変更がなく既存imageを使う場合だけ
 `--no-build-local`を指定できます。
 

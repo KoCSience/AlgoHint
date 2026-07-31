@@ -8,6 +8,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
 LAUNCHER = PROJECT_ROOT / "scripts" / "run-ssh-docker-stack.sh"
+EXPECTED_REMOTE_COMMIT = "42749b7894cbb79133f4034323ec8f646f588019"
 
 
 def write_executable(path: Path, body: str) -> None:
@@ -35,6 +36,7 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         encoding="utf-8",
     )
     credentials.chmod(0o600)
+    installed_marker = tmp_path / "installed"
 
     write_executable(
         fake_bin / "docker",
@@ -53,7 +55,14 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         'printf "ssh %s\\n" "$*" >>"$FAKE_CALLS"\n'
         'if [[ "$*" == *\'printf "%s\\n" "$HOME"\'* ]]; then\n'
         "  echo /remote/learner\n"
+        'elif [[ "$*" == *"current/RELEASE"* ]]; then\n'
+        '  if [[ -e "$FAKE_INSTALLED_MARKER" ]]; then\n'
+        '    printf "%s\\n" "$FAKE_EXPECTED_REMOTE_COMMIT"\n'
+        "  else\n"
+        '    printf "%s\\n" "${FAKE_REMOTE_RELEASE:-$FAKE_EXPECTED_REMOTE_COMMIT}"\n'
+        "  fi\n"
         'elif [[ "$*" == *"test -x"* ]]; then\n'
+        '  if [[ -e "$FAKE_INSTALLED_MARKER" ]]; then exit 0; fi\n'
         '  exit "${FAKE_CONTROL_CHECK_EXIT:-0}"\n'
         'elif [[ "$*" == *"\'status\'"* ]]; then\n'
         '  if [[ "${FAKE_REMOTE_RUNNING:-0}" == "1" ]]; then\n'
@@ -67,13 +76,25 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "fi\n",
     )
     write_executable(fake_bin / "curl", 'printf \'{"status":"ok","ready":true}\\n\'\n')
+    installer = tmp_path / "installer"
+    write_executable(
+        installer,
+        'printf "installer\\n" >>"$FAKE_CALLS"\n'
+        'if [[ "${FAKE_INSTALLER_FAIL:-0}" == "1" ]]; then exit 1; fi\n'
+        'if [[ "${FAKE_INSTALLER_SKIP_UPDATE:-0}" != "1" ]]; then\n'
+        '  touch "$FAKE_INSTALLED_MARKER"\n'
+        "fi\n",
+    )
 
     environment = {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "HOME": str(local_home),
         "FAKE_CALLS": str(calls),
+        "FAKE_EXPECTED_REMOTE_COMMIT": EXPECTED_REMOTE_COMMIT,
+        "FAKE_INSTALLED_MARKER": str(installed_marker),
         "ALGOHINT_CREDENTIALS": str(credentials),
+        "ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT": str(installer),
         "ALGOHINT_SSH_STARTUP_TIMEOUT": "2",
     }
     environment.pop("ALGOHINT_SSH_TARGET", None)
@@ -106,6 +127,95 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     assert "--name algohint-ssh-app app" in recorded
     assert "backend=transformers_http" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
+
+
+def test_build_remote_installs_an_old_release_before_building(tmp_path: Path) -> None:
+    environment, calls = stack_environment(tmp_path)
+    environment["FAKE_REMOTE_RELEASE"] = "51e9a5b315256314d534a0b83b8ae38a5053b44c"
+    environment["FAKE_CONTROL_CHECK_EXIT"] = "1"
+
+    completed = subprocess.run(
+        [str(LAUNCHER), "--build-remote"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("installer") == 1
+    assert recorded.index("installer") < recorded.index(" build app")
+    assert "'build'" in recorded
+    assert EXPECTED_REMOTE_COMMIT in completed.stdout
+
+
+def test_old_release_without_build_flag_is_not_modified(tmp_path: Path) -> None:
+    environment, calls = stack_environment(tmp_path)
+    old_commit = "51e9a5b315256314d534a0b83b8ae38a5053b44c"
+    environment["FAKE_REMOTE_RELEASE"] = old_commit
+    environment["FAKE_CONTROL_CHECK_EXIT"] = "1"
+
+    completed = subprocess.run(
+        [str(LAUNCHER), "--no-build-local"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 2
+    assert f"Expected commit: {EXPECTED_REMOTE_COMMIT}" in completed.stderr
+    assert f"Current commit: {old_commit}" in completed.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "installer" not in recorded
+    assert " build app" not in recorded
+    assert "'start'" not in recorded
+
+
+def test_installer_failure_stops_before_any_image_build(tmp_path: Path) -> None:
+    environment, calls = stack_environment(tmp_path)
+    environment["FAKE_REMOTE_RELEASE"] = "51e9a5b315256314d534a0b83b8ae38a5053b44c"
+    environment["FAKE_INSTALLER_FAIL"] = "1"
+
+    completed = subprocess.run(
+        [str(LAUNCHER), "--build-remote"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 1
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("installer") == 1
+    assert " build app" not in recorded
+    assert "'build'" not in recorded
+
+
+def test_post_install_release_mismatch_is_rejected(tmp_path: Path) -> None:
+    environment, calls = stack_environment(tmp_path)
+    old_commit = "51e9a5b315256314d534a0b83b8ae38a5053b44c"
+    environment["FAKE_REMOTE_RELEASE"] = old_commit
+    environment["FAKE_INSTALLER_SKIP_UPDATE"] = "1"
+
+    completed = subprocess.run(
+        [str(LAUNCHER), "--build-remote"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 2
+    assert "did not produce the expected Docker controller" in completed.stderr
+    assert f"Current commit: {old_commit}" in completed.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert " build app" not in recorded
 
 
 def test_stack_preserves_a_preexisting_remote_container(tmp_path: Path) -> None:
