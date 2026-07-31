@@ -119,6 +119,27 @@ QUESTION_SHORTCUT_SCRIPT = """
   });
 }
 """.strip()
+COMPLETION_TAB_TOOLTIP_SCRIPT = """
+() => {
+  const description = (
+    '全テストACまたはギブアップ後に「完了後の小テスト」を利用できます。'
+  );
+  const applyDescription = () => {
+    const completionTab = Array.from(document.querySelectorAll('[role="tab"]'))
+      .find((tab) => tab.textContent?.includes('完了後の小テスト'));
+    if (!(completionTab instanceof HTMLElement)) return;
+    completionTab.title = description;
+    completionTab.setAttribute('aria-description', description);
+  };
+  // Gradio can replace tab DOM nodes after callbacks, so restore the
+  // explanation after every relevant render instead of binding only once.
+  applyDescription();
+  new MutationObserver(applyDescription).observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}
+""".strip()
 OPEN_COMPLETION_TAB_SCRIPT = """
 () => {
   let attempts = 0;
@@ -2156,5 +2177,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             problem_selector.change(show_teacher, inputs=problem_selector, outputs=teacher_result)
 
         app.load(fn=None, js=QUESTION_SHORTCUT_SCRIPT, queue=False)
+        app.load(fn=None, js=COMPLETION_TAB_TOOLTIP_SCRIPT, queue=False)
 
     return app.queue(default_concurrency_limit=1)

@@ -92,6 +92,15 @@ def test_hint_coach_in_rendered_browser(
     page.goto(local_url)
     expect(page.get_by_role("heading", name="AlgoHint Coach")).to_be_visible()
     expect(page.locator("#profile-selector").get_by_role("combobox")).to_have_value("開発テスト")
+    completion_tab = page.get_by_role("tab", name="完了後の小テスト")
+    expect(completion_tab).to_have_attribute(
+        "title",
+        "全テストACまたはギブアップ後に「完了後の小テスト」を利用できます。",
+    )
+    expect(completion_tab).to_have_attribute(
+        "aria-description",
+        "全テストACまたはギブアップ後に「完了後の小テスト」を利用できます。",
+    )
     page.get_by_role("tab", name="問題演習").click()
 
     _select_dropdown(

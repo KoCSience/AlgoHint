@@ -75,6 +75,8 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "Ctrl+Enter" in config_text
     assert "algohintShortcutBound" in config_text
     assert "完了後の小テスト" in config_text
+    assert "aria-description" in config_text
+    assert "全テストACまたはギブアップ後に" in config_text
     assert "固定小テストを採点" in config_text
     assert "保存済みAIレビューを表示" in config_text
     assert "現在コードを新規AIレビュー" in config_text
