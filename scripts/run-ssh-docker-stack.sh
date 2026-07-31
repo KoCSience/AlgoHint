@@ -5,6 +5,7 @@ umask 077
 
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 compose_file="$project_root/compose.ssh.yaml"
+desktop_compose_file="$project_root/compose.ssh.desktop.yaml"
 release_manifest="$project_root/config/gemma-server-release.conf"
 public_docker_config="$project_root/config/public-docker-client"
 remote_installer="${ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT:-$project_root/scripts/install-gemma-server-ssh.sh}"
@@ -72,6 +73,13 @@ for executable in curl docker ssh; do
     fi
 done
 docker compose version >/dev/null
+docker_operating_system="$(docker info --format '{{.OperatingSystem}}')"
+docker_desktop=false
+compose_file_args=(--file "$compose_file")
+if [[ "$docker_operating_system" == *"Docker Desktop"* ]]; then
+    docker_desktop=true
+    compose_file_args+=(--file "$desktop_compose_file")
+fi
 if [[ ! -r "$release_manifest" ]]; then
     echo "Gemma Server release manifest is missing: $release_manifest" >&2
     exit 2
@@ -116,7 +124,7 @@ compose() {
         --env-file /dev/null \
         --project-name "$project_name" \
         --project-directory "$project_root" \
-        --file "$compose_file" \
+        "${compose_file_args[@]}" \
         "$@"
 }
 
@@ -297,8 +305,7 @@ set +a
 export ALGOHINT_GEMMA_BACKEND="transformers_http"
 export ALGOHINT_GEMMA_DEPLOYMENT="remote"
 export ALGOHINT_GEMMA_BASE_URL="http://127.0.0.1:18000/v1"
-docker_operating_system="$(docker info --format '{{.OperatingSystem}}')"
-if [[ "$docker_operating_system" == *"Docker Desktop"* ]]; then
+if [[ "$docker_desktop" == true ]]; then
     # Docker Desktop runs Linux containers in its VM, so container loopback is
     # not the WSL distribution that owns the tunnel.
     export ALGOHINT_GEMMA_CONTAINER_BASE_URL="http://host.docker.internal:18000/v1"

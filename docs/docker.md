@@ -116,9 +116,11 @@ AlgoHintとの接続は[Gemma Server接続ガイド](gemma-server.md)を参照�
 ## Remote Docker Gemmaとの一括起動
 
 Linux hostでは`compose.ssh.yaml`と`run-ssh-docker-stack.sh`を使えます。host processが
-SSH接続と`127.0.0.1:18000` tunnelを所有し、AlgoHint containerはhost network上で
-そのloopbackへ接続します。SSH config、秘密鍵、agent socketはcontainerへ渡しません。
-AlgoHint UI自身も`127.0.0.1:7860`だけで待ち受けます。
+SSH接続と`127.0.0.1:18000` tunnelを所有します。native LinuxではAlgoHint containerが
+host network上のloopbackへ接続します。Docker Desktopでは
+`compose.ssh.desktop.yaml`を自動追加し、bridgeから`host.docker.internal`経由でtunnelへ
+接続して、UIだけをhostの`127.0.0.1:7860`へpublishします。SSH config、秘密鍵、
+agent socketはcontainerへ渡しません。
 
 事前にremote credentialsを作成し、API keyだけをAlgoHint hostへ同期します。初回の
 `--build-remote`はremote releaseが古い、またはDocker controllerがない場合にmanifestの
@@ -155,10 +157,10 @@ host networkでは`127.0.0.1:18000`、Docker DesktopのLinux VMからは
 `host.docker.internal:18000`を使います。いずれもhostが所有する同じSSH tunnelへ接続し、
 credentials内の古いURLでは上書きできません。
 
-この経路はDockerのhost networkを必要とします。Docker Desktopではhost networkingの
-対応と有効化を事前に確認してください。host networkは提出コードからhostのloopback
-serviceへ到達できる範囲も増やすため、信頼できる個人の提出コードに限定し、host上の
-不要なlistenerを停止してください。
+native Linuxの経路はDockerのhost networkを使います。これは提出コードからhostの
+loopback serviceへ到達できる範囲も増やすため、信頼できる個人の提出コードに限定し、
+host上の不要なlistenerを停止してください。Docker Desktopではbridgeを使いますが、
+`host.docker.internal`経由でhost serviceへ到達できるため、同じ運用上の注意が必要です。
 
 停止と再開ではボリュームを保持します。
 

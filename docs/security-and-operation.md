@@ -22,7 +22,8 @@ Docker構成では、非rootユーザー、読み取り専用ルートファイ�
 
 ただし、提出コードはアプリと同じコンテナ、ユーザー、ファイルの読み取り権限、ネットワークを共有します。教材中の隠しテストや模範解答を読み取ること、学習ログへアクセスすること、コンテナから外向き通信を試みることをDocker構成だけでは防止しません。
 
-remote Docker stackのhost network経路では、提出コードからhostのloopback listenerへも
+remote Docker stackのnative Linux host network経路では、提出コードからhostのloopback listenerへも
+到達できます。Docker Desktopのbridge経路も`host.docker.internal`からhost serviceへ
 到達できます。SSH鍵をcontainerへmountしないことでremote hostへの直接認証は避けますが、
 host tunnelと他のlocal serviceは強い分離境界ではありません。信頼できる個人利用に限定し、
 不要なhost listenerを停止してください。credentialsはowner限定・非symlink fileとして

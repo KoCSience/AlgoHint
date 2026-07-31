@@ -178,6 +178,7 @@ def test_docker_desktop_container_uses_the_host_gateway(tmp_path: Path) -> None:
         "container_base=http://host.docker.internal:18000/v1"
         in recorded
     )
+    assert "compose.ssh.desktop.yaml" in recorded
 
 
 def test_public_docker_client_config_cannot_contain_credentials() -> None:
