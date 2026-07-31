@@ -154,6 +154,8 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     assert " -N -T " in f" {recorded} "
     assert " doctor --provider gemma" in recorded
     assert "--name algohint-ssh-app app" in recorded
+    assert "--service-ports --name algohint-ssh-app app" in recorded
+    assert "--service-ports" not in doctor_call
     assert "backend=transformers_http" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
     assert "container_base=http://127.0.0.1:18000/v1" in recorded

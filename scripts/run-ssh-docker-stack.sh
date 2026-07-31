@@ -328,7 +328,10 @@ if ! algohint_requested_gemma_doctor "${app_arguments[@]}"; then
         exit 1
     fi
 fi
-compose run --rm --no-deps --name "$container_name" app "${app_arguments[@]}" &
+# `compose run` omits service port mappings unless explicitly requested.
+# Publish only the long-running UI container; the doctor remains unexposed.
+compose run --rm --no-deps --service-ports \
+    --name "$container_name" app "${app_arguments[@]}" &
 app_pid=$!
 algohint_monitor_gemma_health \
     "$health_url" \
