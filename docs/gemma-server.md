@@ -321,6 +321,31 @@ AlgoHint自体は停止せず、Gemma要求は安全にRuleBasedヒントへfall
 
 remote Gemmaを維持する場合は`--keep-remote`を指定します。
 
+### AlgoHintとGemmaの両方をDockerで起動
+
+remote releaseがDocker対応commitであれば、host SSH tunnelを維持したままAlgoHintも
+container化できます。初回はremoteのcommit固定imageを構築します。
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-docker-stack.sh --build-remote
+```
+
+以後は`--build-remote`を外します。この経路はremote
+`current/scripts/docker-control.sh`の安定した`container: running|not-running`状態を
+使って所有権を判定します。native tmux Gemmaとの同時起動はremote controller側で
+拒否されます。SSH鍵はhostだけが使用し、containerにはAPI利用に必要なGemma keyだけを
+環境変数として渡します。
+
+```text
+remote Docker controller (3 GPU, 127.0.0.1:18080)
+  → host SSH tunnel (127.0.0.1:18000)
+  → AlgoHint Docker doctor
+  → AlgoHint Docker UI (127.0.0.1:7860)
+```
+
+詳細は[Docker運用ガイド](docker.md#remote-docker-gemmaとの一括起動)を参照してください。
+
 同一hostでAlgoHintとstandalone serverを動かす場合:
 
 **実行場所: AlgoHintとGemma Serverを同居させたhost**

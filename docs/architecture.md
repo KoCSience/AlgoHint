@@ -159,6 +159,23 @@ SQLiteはプロフィールごとに一ファイルとし、WAL、`BEGIN IMMEDIA
       -> /tmp/algohint-judge-*（tmpfs、提出ごとに破棄）
 ```
 
+remote Docker Gemmaを使う場合だけ、hostがSSH tunnelを所有し、AlgoHint containerは
+host networkへ参加します。
+
+```text
+GPU host: Gemma container -> 127.0.0.1:18080
+                                 │ SSH forwarding
+AlgoHint host:              127.0.0.1:18000
+                                 │ host network loopback
+                            AlgoHint container
+                                 │
+                            127.0.0.1:7860 -> browser
+```
+
+SSH資格情報をcontainerへ持ち込まないことと、両serviceのlistenerをloopbackのまま
+維持することがhost network採用の意図です。launcherはremote、tunnel、local containerの
+所有状態を別々に追跡し、自身が開始したprocessだけをcleanupします。
+
 コンテナ化によってホストとの境界は追加されますが、アプリと提出コードの内部構造は変えません。提出コードは`LocalJudgeRunner`から同じコンテナ内の制限付き子プロセスとして起動されます。別コンテナ化しない理由はローカル個人利用というMVPの範囲と実装の単純さを維持するためであり、信頼できない利用者向けの隔離には使用できません。
 
 提出時は、UIが `SubmissionService` へプロフィールID・問題ID・ソースを渡します。サービスは隠しケースを含むJudge結果を受け、安全化した結果とコードsnapshotを保存してから集計ログを更新します。公開サンプルで失敗した場合だけ入出力差分を含むDTOへ変換し、隠しテストの詳細はUIにも履歴にも渡しません。

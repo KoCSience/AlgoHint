@@ -106,13 +106,46 @@ docker ps --filter name=algohint
 `ALGOHINT_GEMMA_BACKEND=transformers_http`と
 `ALGOHINT_GEMMA_DEPLOYMENT=remote`も渡します。
 
-Dockerコンテナ内の`127.0.0.1`はコンテナ自身を指すため、WSLホストの
-`127.0.0.1:18000`へ作成したSSHトンネルをそのまま参照できません。Dockerで実Gemmaを
-検証する場合は、トンネルの公開範囲と認証を別途設計してください。通常のDocker
-スモークではRuleBasedを使い、実GemmaのE2EはWSLホスト起動のAlgoHintで実施します。
+通常のbridge networkでは、Dockerコンテナ内の`127.0.0.1`はコンテナ自身を指すため、
+WSLホストのSSHトンネルを参照できません。実Gemmaを使う専用経路は次節のhost network
+構成を使います。通常のDockerスモークでは引き続きRuleBasedを使います。
 推論サーバーの実装とversion付き配備は
 [AlgoHint Gemma Server](https://github.com/KoCSience/AlgoHint-Gemma-Server)、
 AlgoHintとの接続は[Gemma Server接続ガイド](gemma-server.md)を参照してください。
+
+## Remote Docker Gemmaとの一括起動
+
+Linux hostでは`compose.ssh.yaml`と`run-ssh-docker-stack.sh`を使えます。host processが
+SSH接続と`127.0.0.1:18000` tunnelを所有し、AlgoHint containerはhost network上で
+そのloopbackへ接続します。SSH config、秘密鍵、agent socketはcontainerへ渡しません。
+AlgoHint UI自身も`127.0.0.1:7860`だけで待ち受けます。
+
+事前に固定SHAのGemma Server releaseとremote credentialsを導入し、API keyだけを
+AlgoHint hostへ同期します。初回はremote imageを含めて構築します。
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-docker-stack.sh --build-remote
+```
+
+通常起動:
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-docker-stack.sh
+```
+
+処理順は、local Compose検証・build、remote Docker controller検査・必要時start、SSH
+tunnel、ready待機、container内の認証付きdoctor、AlgoHint container、health monitor
+です。終了時はlocal containerとtunnelを停止し、remoteはこの起動で開始した場合だけ
+停止します。既存remoteを残す規則を変えず、新規remoteも残したい場合は
+`--keep-remote`を使います。local sourceに変更がなく既存imageを使う場合だけ
+`--no-build-local`を指定できます。
+
+この経路はDockerのhost networkを必要とします。Docker Desktopではhost networkingの
+対応と有効化を事前に確認してください。host networkは提出コードからhostのloopback
+serviceへ到達できる範囲も増やすため、信頼できる個人の提出コードに限定し、host上の
+不要なlistenerを停止してください。
 
 停止と再開ではボリュームを保持します。
 

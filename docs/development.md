@@ -37,7 +37,8 @@ uv run --project ../AlgoHint-Gemma-Server --locked pytest
 uv run pytest -q \
   tests/test_transformers_http_hint_provider.py \
   tests/test_gemma_server_install.py \
-  tests/test_startup_scripts.py
+  tests/test_startup_scripts.py \
+  tests/test_ssh_docker_stack.py
 ```
 
 ヒント機能を変更した場合は、通常テストに加えてGradio API E2Eと、明示的に有効化する
@@ -268,6 +269,11 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 参照してください。各スクリプトは自分が新規起動したGemmaだけを終了時に停止します。
 managed launcherはcredentials読込後も検証済みloopback接続先を再適用するため、
 credentials fileに残った古いbackend、deployment、base URLで接続先が変わりません。
+
+AlgoHintもDockerで動かす経路は`compose.ssh.yaml`と
+`scripts/run-ssh-docker-stack.sh`が担当します。変更時は、Compose展開後のloopback
+listenerとhost network、資格情報権限、remote `container: running|not-running`契約、
+既存remoteの非所有、doctor失敗時cleanupを`test_ssh_docker_stack.py`で検証します。
 
 doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
 成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を

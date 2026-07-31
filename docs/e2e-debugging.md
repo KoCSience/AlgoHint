@@ -221,6 +221,17 @@ docker volume inspect algohint-runtime
 
 `docker compose down --volumes`とvolume pruneは使用しません。
 
+remote Docker Gemmaまで含む最終確認は、固定SHA release導入後に次で行います。
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-docker-stack.sh --no-build-local
+```
+
+container内doctorの成功後だけUIが起動すること、`127.0.0.1:7860`から1件のGemma要求が
+成功すること、終了時にtunnelと所有remoteだけが停止することを確認します。remote imageの
+初回buildは検証開始前に`--build-remote`付きで行い、E2E中のbuild時間と推論時間を混ぜません。
+
 ## トラブルシューティング
 
 | 症状 | 確認と対処 |

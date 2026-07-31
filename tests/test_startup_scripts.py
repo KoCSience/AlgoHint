@@ -95,6 +95,7 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "run-algohint.sh",
         SCRIPTS / "run-local-stack.sh",
         SCRIPTS / "run-ssh-stack.sh",
+        SCRIPTS / "run-ssh-docker-stack.sh",
         SCRIPTS / "bootstrap-gemma-server-remote.sh",
         SCRIPTS / "check-gemma-ssh.sh",
         SCRIPTS / "install-gemma-server-ssh.sh",

@@ -126,6 +126,18 @@ docker compose down
 
 `docker run`を使う手順、教師モード、Dev Container、データ管理は[Docker運用ガイド](docs/docker.md)を参照してください。
 
+remote GPU hostのDocker版Gemma、host所有のSSH tunnel、Docker版AlgoHintをまとめる
+場合は、初回だけremote imageも構築します。SSH鍵はAlgoHint containerへmountしません。
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-docker-stack.sh --build-remote
+```
+
+2回目以降は`--build-remote`を外します。local imageの再構築も省略する場合だけ
+`--no-build-local`を指定します。構造・前提・所有processのcleanupは
+[Docker運用ガイド](docs/docker.md#remote-docker-gemmaとの一括起動)を参照してください。
+
 ## ホストで起動
 
 ```bash
@@ -153,6 +165,10 @@ Gemmaだけを停止し、継続する場合は`--keep-gemma`を付けます。
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-stack.sh
 ```
+
+AlgoHintもcontainerで動かす場合は`run-ssh-docker-stack.sh`を使います。これはremoteの
+native `server-control.sh`ではなくDocker controllerを選び、既存remote containerの
+所有権を奪いません。
 
 このlauncherはhealth確認後に認証付きdoctorを実行し、model IDとready状態が一致した場合
 だけAlgoHintを起動します。起動後にserverまたはtunnelのhealthが失われても、アプリは

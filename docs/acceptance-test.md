@@ -113,6 +113,8 @@
 - [ ] managed launcherがcredentials読込後にloopback endpointを再適用し、古い接続設定へlearner dataを送らない。
 - [ ] health成功後に認証付きdoctorが成功した場合だけAlgoHintを起動し、失敗時は所有processをcleanupする。
 - [ ] 起動後にhealthを3回連続で取得できない場合、remote serviceを自動再起動せず、UIとRuleBased fallbackを維持して警告を1回表示する。
+- [ ] Docker SSH stackがremote Docker Gemma、host tunnel、local AlgoHint containerを順に起動し、container内doctor成功後だけUIを開始する。
+- [ ] Docker SSH stackがSSH鍵をmountせず、既存remote containerを停止せず、自分が起動したremoteだけを既定cleanupする。
 - [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
 - [ ] listener不在の`ConnectError`が`endpoint_unreachable`となり、502/503の`provider_unavailable`、timeout、401と区別される。
@@ -127,6 +129,7 @@
 
 - [ ] runtimeとdevelopmentの両ターゲットをビルドできる。
 - [ ] Compose設定が検証に合格し、公開ポートが`127.0.0.1:7860`に限定される。
+- [ ] SSH用Composeがhost networkでもAlgoHintを`127.0.0.1:7860`だけにbindし、Gemma endpointを`127.0.0.1:18000/v1`へ固定する。
 - [ ] 起動シェルに設定したLLM変数がComposeの受け口からコンテナへ渡り、Composeファイルとイメージには秘密値が含まれない。
 - [ ] コンテナがUID 10001の非rootユーザーで起動し、ヘルスチェックが`healthy`になる。
 - [ ] ルートファイルシステムへ書き込めず、`/tmp`と`data/runtime`へは書き込める。
