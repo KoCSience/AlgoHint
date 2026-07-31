@@ -96,6 +96,7 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "run-local-stack.sh",
         SCRIPTS / "run-ssh-stack.sh",
         SCRIPTS / "run-ssh-docker-stack.sh",
+        SCRIPTS / "wait-gemma-ready-remote.sh",
         SCRIPTS / "bootstrap-gemma-server-remote.sh",
         SCRIPTS / "check-gemma-ssh.sh",
         SCRIPTS / "install-gemma-server-ssh.sh",
@@ -444,6 +445,9 @@ if [[ "$*" == *'printf \"%s\\n\" \"$HOME\"'* ]]; then
     echo '/remote/learner'
 elif [[ "$*" == *'test -x '* ]]; then
     exit "${FAKE_CONTROL_CHECK_EXIT:-0}"
+elif [[ "$*" == *'bash -s -- '* ]]; then
+    echo 'Remote Gemma Server is ready after 2s.'
+    exit "${FAKE_REMOTE_WAIT_FAIL:-0}"
 elif [[ "$*" == *\"'status'\"* ]]; then
     if [[ "${FAKE_REMOTE_RUNNING:-0}" == "1" ]]; then
         echo 'process: running (pid=34, validated)'
@@ -487,7 +491,9 @@ def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None
     assert "ALGOHINT_GEMMA_INSTALL_ROOT=" in recorded
     assert "ALGOHINT_GEMMA_APP_ROOT=" not in recorded
     assert "'start'" in recorded
+    assert "bash -s --" in recorded
     assert " -N -T " in f" {recorded} "
+    assert recorded.index("bash -s --") < recorded.index(" -N -T ")
     assert "'stop'" in recorded
     assert "app doctor --provider gemma" in recorded
     assert "deployment=remote" in recorded

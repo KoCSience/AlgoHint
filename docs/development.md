@@ -37,6 +37,7 @@ uv run --project ../AlgoHint-Gemma-Server --locked pytest
 uv run pytest -q \
   tests/test_transformers_http_hint_provider.py \
   tests/test_gemma_server_install.py \
+  tests/test_remote_ready_wait.py \
   tests/test_startup_scripts.py \
   tests/test_ssh_docker_stack.py
 ```

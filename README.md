@@ -173,6 +173,9 @@ native `server-control.sh`ではなくDocker controllerを選び、既存remote 
 このlauncherはhealth確認後に認証付きdoctorを実行し、model IDとready状態が一致した場合
 だけAlgoHintを起動します。起動後にserverまたはtunnelのhealthが失われても、アプリは
 RuleBasedヒントを利用できる状態で継続し、端末へ復旧案内を1回表示します。
+Gemmaはmodel load完了後にlistenerを開くため、launcherはremote側でreadyを確認してから
+SSH tunnelを作ります。初回のmodel取得を含め最大900秒待ち、10秒ごとに秘密を含まない
+`loading_model`などの進捗を表示します。
 
 vLLMを使わず、別のLinuxホストへPyTorch／Transformers版Gemma 4 12Bサーバーを
 接続する場合は、[Gemma Server接続ガイド](docs/gemma-server.md)を参照してください。

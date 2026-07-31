@@ -297,8 +297,8 @@ scriptは次の順で実行します。
 
 1. remote controllerが実行可能か検査する。
 2. 既存serverがなければstartする。
-3. `127.0.0.1:18000`からremote `127.0.0.1:18080`へtunnelを作る。
-4. healthがreadyになるまでbounded waitする。
+3. remote host内でhealthがreadyになるまでbounded waitする。
+4. `127.0.0.1:18000`からremote `127.0.0.1:18080`へtunnelを作る。
 5. credentials読込後も接続先を上のloopback tunnelへ固定する。
 6. 認証付き`/v1/models`でmodel IDとreadyを検査する。
 7. doctor成功後だけAlgoHintを起動し、5秒間隔でhealthを監視する。
@@ -306,8 +306,8 @@ scriptは次の順で実行します。
 
 ```text
 remote controller
+  → remote /healthz ready待機
   → SSH tunnel
-  → /healthz
   → managed endpoint固定
   → doctor (/v1/models)
   → AlgoHint + health monitor
@@ -318,6 +318,12 @@ serverを自動再起動したり生成POSTを自動再送したりはしませ�
 所有権を奪うことと、応答だけ失われた生成処理を重複実行することを避けるためです。
 AlgoHint自体は停止せず、Gemma要求は安全にRuleBasedヒントへfallbackします。監視間隔は
 `ALGOHINT_GEMMA_MONITOR_INTERVAL_SECONDS`で1〜60秒に変更でき、既定は5秒です。
+
+Uvicornはmodel load完了後に`127.0.0.1:18080`をlistenします。そのため起動中に先に
+tunnelへ接続すると、正常なload中でもSSHが`channel ... Connection refused`を表示します。
+launcherは1本のSSH session内でremote healthを待つことでこの表示を避け、10秒ごとに
+`starting`、`loading_processor`、`loading_model`などの安全な状態だけを表示します。
+既定timeoutは初回model取得を考慮して900秒です。
 
 remote Gemmaを維持する場合は`--keep-remote`を指定します。
 

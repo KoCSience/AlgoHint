@@ -5,13 +5,14 @@ umask 077
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 algohint_runner="${ALGOHINT_RUN_ALGOHINT_SCRIPT:-$project_root/scripts/run-algohint.sh}"
+remote_wait_helper="$project_root/scripts/wait-gemma-ready-remote.sh"
 # shellcheck source=scripts/lib/gemma-ssh-target.sh
 . "$project_root/scripts/lib/gemma-ssh-target.sh"
 # shellcheck source=scripts/lib/gemma-stack-health.sh
 . "$project_root/scripts/lib/gemma-stack-health.sh"
 local_port="${ALGOHINT_SSH_LOCAL_PORT:-18000}"
 remote_port="${ALGOHINT_SSH_REMOTE_PORT:-18080}"
-startup_timeout="${ALGOHINT_SSH_STARTUP_TIMEOUT:-300}"
+startup_timeout="${ALGOHINT_SSH_STARTUP_TIMEOUT:-900}"
 monitor_interval="${ALGOHINT_GEMMA_MONITOR_INTERVAL_SECONDS:-5}"
 health_failure_threshold=3
 keep_remote=false
@@ -53,6 +54,10 @@ if [[ ! -x "$algohint_runner" ]]; then
     echo "AlgoHint launcher is missing or not executable: $algohint_runner" >&2
     exit 2
 fi
+if [[ ! -r "$remote_wait_helper" ]]; then
+    echo "Remote Gemma readiness helper is missing: $remote_wait_helper" >&2
+    exit 2
+fi
 quote_remote() {
     local value="${1//\'/\'\\\'\'}"
     printf "'%s'" "$value"
@@ -88,6 +93,12 @@ remote_control_command() {
     local action="$1"
     ssh -T "$ssh_target" \
         "ALGOHINT_GEMMA_INSTALL_ROOT=$(quote_remote "$remote_app_root") $quoted_control $(quote_remote "$action")"
+}
+
+wait_for_remote_server() {
+    local remote_command
+    remote_command="bash -s -- $quoted_control $(quote_remote "$startup_timeout") 10 15"
+    ssh -T "$ssh_target" "$remote_command" <"$remote_wait_helper"
 }
 
 # Distinguish an incomplete remote installation from a controller or model
@@ -163,6 +174,10 @@ else
     started_remote=true
 fi
 
+# Uvicorn does not listen until model loading completes. Waiting on the GPU
+# host first prevents each local health probe from surfacing as an SSH channel
+# "Connection refused" error while startup is still progressing normally.
+wait_for_remote_server
 ssh -N -T \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=30 \

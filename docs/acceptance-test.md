@@ -112,6 +112,8 @@
 - [ ] `--keep-gemma`／`--keep-remote`、Ctrl+C、異常終了でも所有サービスとトンネルを仕様どおり処理する。
 - [ ] managed launcherがcredentials読込後にloopback endpointを再適用し、古い接続設定へlearner dataを送らない。
 - [ ] health成功後に認証付きdoctorが成功した場合だけAlgoHintを起動し、失敗時は所有processをcleanupする。
+- [ ] native SSH launcherがremote ready後にだけtunnelを作り、model load中にSSHの`Connection refused`を反復表示しない。
+- [ ] remote processが15秒後も存在しない場合は900秒を待たず、安全なstatusとlog末尾を表示してcleanupする。
 - [ ] 起動後にhealthを3回連続で取得できない場合、remote serviceを自動再起動せず、UIとRuleBased fallbackを維持して警告を1回表示する。
 - [ ] Docker SSH stackがremote Docker Gemma、host tunnel、local AlgoHint containerを順に起動し、container内doctor成功後だけUIを開始する。
 - [ ] Docker SSH stackがSSH鍵をmountせず、既存remote containerを停止せず、自分が起動したremoteだけを既定cleanupする。

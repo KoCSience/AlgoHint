@@ -236,6 +236,7 @@ container内doctorの成功後だけUIが起動すること、`127.0.0.1:7860`�
 
 | 症状 | 確認と対処 |
 |---|---|
+| SSHの`channel ... Connection refused`がmodel load中に反復する | `run-ssh-stack.sh`がremote ready待機対応版か確認し、remote releaseのstatusとlogを確認する |
 | Chromium executableがない | `uv run playwright install chromium`を実行する |
 | Linux共有ライブラリがない | 管理者承認後に`playwright install --with-deps chromium`を使う |
 | Gradio起動待ちがtimeout | 既存プロセス、CPU負荷、ループバック接続、ログを確認する |
