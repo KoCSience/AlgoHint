@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -42,6 +44,7 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     )
     credentials.chmod(0o600)
     installed_marker = tmp_path / "installed"
+    start_marker = tmp_path / "start-called"
 
     write_executable(
         fake_bin / "docker",
@@ -75,6 +78,10 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "  else\n"
         "    echo 'container: not-running'\n"
         "  fi\n"
+        'elif [[ "$*" == *"\'start\'"* && "${FAKE_START_HANG:-0}" == "1" ]]; then\n'
+        '  touch "$FAKE_START_MARKER"\n'
+        "  trap 'exit 130' TERM INT\n"
+        "  while true; do sleep 1; done\n"
         'elif [[ " $* " == *" -N "* ]]; then\n'
         "  trap 'exit 0' TERM INT\n"
         "  while true; do sleep 1; done\n"
@@ -98,6 +105,7 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "FAKE_CALLS": str(calls),
         "FAKE_EXPECTED_REMOTE_COMMIT": EXPECTED_REMOTE_COMMIT,
         "FAKE_INSTALLED_MARKER": str(installed_marker),
+        "FAKE_START_MARKER": str(start_marker),
         "ALGOHINT_CREDENTIALS": str(credentials),
         "ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT": str(installer),
         "ALGOHINT_SSH_STARTUP_TIMEOUT": "2",
@@ -262,6 +270,35 @@ def test_contract_failure_cleans_up_owned_remote_before_ui(tmp_path: Path) -> No
     assert "'stop'" in recorded
     assert "--name algohint-ssh-app" not in recorded
     assert "contract check failed" in completed.stderr
+
+
+def test_interrupt_during_remote_start_cleans_up_owned_container(
+    tmp_path: Path,
+) -> None:
+    environment, calls = stack_environment(tmp_path)
+    environment["FAKE_START_HANG"] = "1"
+    start_marker = Path(environment["FAKE_START_MARKER"])
+
+    process = subprocess.Popen(
+        [str(LAUNCHER), "--no-build-local"],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    deadline = time.monotonic() + 5
+    while not start_marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert start_marker.exists()
+
+    os.killpg(process.pid, signal.SIGINT)
+    _, stderr = process.communicate(timeout=5)
+
+    assert process.returncode == 130, stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "'start'" in recorded
+    assert "'stop'" in recorded
 
 
 def test_stack_rejects_permissive_credentials_before_remote_access(

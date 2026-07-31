@@ -247,8 +247,11 @@ remote_status="$(remote_control_command status 2>&1 || true)"
 if grep -qx "container: running" <<<"$remote_status"; then
     echo "Using the Gemma Docker container already running on $ssh_target."
 elif grep -qx "container: not-running" <<<"$remote_status"; then
-    remote_control_command start
+    # Claim cleanup responsibility before the blocking start call. If startup is
+    # interrupted while the controller waits for model readiness, the remote
+    # container already exists and must not be left in a restart/loading state.
     started_remote=true
+    remote_control_command start
 else
     echo "Remote Gemma Docker status could not be determined safely." >&2
     printf '%s\n' "$remote_status" >&2
