@@ -8,7 +8,12 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
 LAUNCHER = PROJECT_ROOT / "scripts" / "run-ssh-docker-stack.sh"
-EXPECTED_REMOTE_COMMIT = "42749b7894cbb79133f4034323ec8f646f588019"
+RELEASE_MANIFEST = PROJECT_ROOT / "config" / "gemma-server-release.conf"
+EXPECTED_REMOTE_COMMIT = next(
+    line.split("=", maxsplit=1)[1].strip("'")
+    for line in RELEASE_MANIFEST.read_text(encoding="utf-8").splitlines()
+    if line.startswith("ALGOHINT_GEMMA_SERVER_COMMIT=")
+)
 
 
 def write_executable(path: Path, body: str) -> None:
