@@ -28,6 +28,7 @@ started_remote=false
 tunnel_pid=""
 app_pid=""
 monitor_pid=""
+public_docker_runtime_config=""
 
 while (($# > 0)); do
     case "$1" in
@@ -230,6 +231,11 @@ cleanup() {
     if [[ "$started_remote" == true && "$keep_remote" == false ]]; then
         remote_control_command stop || true
     fi
+    if [[ -n "$public_docker_runtime_config" &&
+        -d "$public_docker_runtime_config" &&
+        ! -L "$public_docker_runtime_config" ]]; then
+        rm -rf -- "$public_docker_runtime_config"
+    fi
     exit "$exit_code"
 }
 trap cleanup EXIT
@@ -247,7 +253,17 @@ if [[ "$build_local" == true ]]; then
     # Both base images are public and digest-pinned. Excluding the user's
     # registry credential helpers keeps secrets out of BuildKit sessions and
     # avoids Docker Desktop/WSL helper failures for anonymous GHCR metadata.
-    DOCKER_CONFIG="$public_docker_config" compose build app
+    # Buildx writes state beside config.json, so copy the empty config into an
+    # owned temporary directory instead of mutating the tracked source tree.
+    public_docker_runtime_config="$(
+        mktemp -d "${TMPDIR:-/tmp}/algohint-public-docker.XXXXXX"
+    )"
+    install -m 600 \
+        "$public_docker_config/config.json" \
+        "$public_docker_runtime_config/config.json"
+    DOCKER_CONFIG="$public_docker_runtime_config" compose build app
+    rm -rf -- "$public_docker_runtime_config"
+    public_docker_runtime_config=""
 elif ! docker image inspect algohint:ssh-local >/dev/null 2>&1; then
     echo "AlgoHint SSH image is missing; omit --no-build-local for the first run." >&2
     exit 2
@@ -281,6 +297,14 @@ set +a
 export ALGOHINT_GEMMA_BACKEND="transformers_http"
 export ALGOHINT_GEMMA_DEPLOYMENT="remote"
 export ALGOHINT_GEMMA_BASE_URL="http://127.0.0.1:18000/v1"
+docker_operating_system="$(docker info --format '{{.OperatingSystem}}')"
+if [[ "$docker_operating_system" == *"Docker Desktop"* ]]; then
+    # Docker Desktop runs Linux containers in its VM, so container loopback is
+    # not the WSL distribution that owns the tunnel.
+    export ALGOHINT_GEMMA_CONTAINER_BASE_URL="http://host.docker.internal:18000/v1"
+else
+    export ALGOHINT_GEMMA_CONTAINER_BASE_URL="$ALGOHINT_GEMMA_BASE_URL"
+fi
 
 ssh -N -T \
     -o ExitOnForwardFailure=yes \

@@ -48,9 +48,13 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
 
     write_executable(
         fake_bin / "docker",
-        'printf "docker %s backend=%s base=%s config=%s\\n" "$*" '
+        'printf "docker %s backend=%s base=%s container_base=%s config=%s\\n" "$*" '
         '"${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_BASE_URL:-}" '
+        '"${ALGOHINT_GEMMA_CONTAINER_BASE_URL:-}" '
         '"${DOCKER_CONFIG:-}" >>"$FAKE_CALLS"\n'
+        'if [[ "${1:-}" == "info" ]]; then\n'
+        '  printf "%s\\n" "${FAKE_DOCKER_OS:-Linux}"\n'
+        "fi\n"
         'if [[ "${1:-}" == "container" && "${2:-}" == "inspect" ]]; then\n'
         '  exit "${FAKE_LOCAL_CONTAINER_EXISTS:-1}"\n'
         "fi\n"
@@ -107,6 +111,7 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "FAKE_EXPECTED_REMOTE_COMMIT": EXPECTED_REMOTE_COMMIT,
         "FAKE_INSTALLED_MARKER": str(installed_marker),
         "FAKE_START_MARKER": str(start_marker),
+        "TMPDIR": str(tmp_path),
         "ALGOHINT_CREDENTIALS": str(credentials),
         "ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT": str(installer),
         "ALGOHINT_SSH_STARTUP_TIMEOUT": "2",
@@ -135,7 +140,10 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     assert "stale.example.invalid" not in output + recorded
     assert " build app" in recorded
     build_call = next(line for line in recorded.splitlines() if " build app" in line)
-    assert "config=" + str(PROJECT_ROOT / "config" / "public-docker-client") in build_call
+    build_config = Path(build_call.rsplit("config=", maxsplit=1)[1])
+    assert build_config.parent == tmp_path
+    assert build_config.name.startswith("algohint-public-docker.")
+    assert not build_config.exists()
     doctor_call = next(
         line for line in recorded.splitlines() if " doctor --provider gemma" in line
     )
@@ -148,6 +156,28 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     assert "--name algohint-ssh-app app" in recorded
     assert "backend=transformers_http" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
+    assert "container_base=http://127.0.0.1:18000/v1" in recorded
+
+
+def test_docker_desktop_container_uses_the_host_gateway(tmp_path: Path) -> None:
+    environment, calls = stack_environment(tmp_path)
+    environment["FAKE_DOCKER_OS"] = "Docker Desktop"
+
+    completed = subprocess.run(
+        [str(LAUNCHER), "--no-build-local"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert (
+        "container_base=http://host.docker.internal:18000/v1"
+        in recorded
+    )
 
 
 def test_public_docker_client_config_cannot_contain_credentials() -> None:

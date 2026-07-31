@@ -150,6 +150,11 @@ local image buildのbase imageは公開かつdigest固定です。このbuildだ
 credential helperをBuildKit sessionへ渡しません。remote build、doctor、起動・停止では
 通常のDocker client設定を使用します。
 
+接続先はDocker Engineの実行形態に合わせてlauncherが固定します。native Linuxの
+host networkでは`127.0.0.1:18000`、Docker DesktopのLinux VMからは
+`host.docker.internal:18000`を使います。いずれもhostが所有する同じSSH tunnelへ接続し、
+credentials内の古いURLでは上書きできません。
+
 この経路はDockerのhost networkを必要とします。Docker Desktopではhost networkingの
 対応と有効化を事前に確認してください。host networkは提出コードからhostのloopback
 serviceへ到達できる範囲も増やすため、信頼できる個人の提出コードに限定し、host上の

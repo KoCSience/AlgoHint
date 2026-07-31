@@ -22,7 +22,7 @@ services:
       ALGOHINT_GEMMA_API_KEY:
       ALGOHINT_GEMMA_BACKEND: transformers_http
       ALGOHINT_GEMMA_DEPLOYMENT: remote
-      ALGOHINT_GEMMA_BASE_URL: http://127.0.0.1:18000/v1
+      ALGOHINT_GEMMA_BASE_URL: ${ALGOHINT_GEMMA_CONTAINER_BASE_URL:-http://127.0.0.1:18000/v1}
     volumes:
       - runtime-data:/opt/algohint/data/runtime
     read_only: true
