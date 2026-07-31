@@ -48,8 +48,9 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
 
     write_executable(
         fake_bin / "docker",
-        'printf "docker %s backend=%s base=%s\\n" "$*" '
-        '"${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_BASE_URL:-}" >>"$FAKE_CALLS"\n'
+        'printf "docker %s backend=%s base=%s config=%s\\n" "$*" '
+        '"${ALGOHINT_GEMMA_BACKEND:-}" "${ALGOHINT_GEMMA_BASE_URL:-}" '
+        '"${DOCKER_CONFIG:-}" >>"$FAKE_CALLS"\n'
         'if [[ "${1:-}" == "container" && "${2:-}" == "inspect" ]]; then\n'
         '  exit "${FAKE_LOCAL_CONTAINER_EXISTS:-1}"\n'
         "fi\n"
@@ -111,6 +112,7 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "ALGOHINT_SSH_STARTUP_TIMEOUT": "2",
     }
     environment.pop("ALGOHINT_SSH_TARGET", None)
+    environment.pop("DOCKER_CONFIG", None)
     return environment, calls
 
 
@@ -132,6 +134,12 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     assert "private-docker-stack-marker" not in output + recorded
     assert "stale.example.invalid" not in output + recorded
     assert " build app" in recorded
+    build_call = next(line for line in recorded.splitlines() if " build app" in line)
+    assert "config=" + str(PROJECT_ROOT / "config" / "public-docker-client") in build_call
+    doctor_call = next(
+        line for line in recorded.splitlines() if " doctor --provider gemma" in line
+    )
+    assert doctor_call.endswith("config=")
     assert "'build'" in recorded
     assert "'start'" in recorded
     assert "'stop'" in recorded
@@ -140,6 +148,12 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     assert "--name algohint-ssh-app app" in recorded
     assert "backend=transformers_http" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
+
+
+def test_public_docker_client_config_cannot_contain_credentials() -> None:
+    config = PROJECT_ROOT / "config" / "public-docker-client" / "config.json"
+
+    assert config.read_text(encoding="utf-8") == "{}\n"
 
 
 def test_build_remote_installs_an_old_release_before_building(tmp_path: Path) -> None:

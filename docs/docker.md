@@ -145,6 +145,11 @@ containerとtunnelを停止し、remoteはこの起動で開始した場合だ�
 `--keep-remote`を使います。local sourceに変更がなく既存imageを使う場合だけ
 `--no-build-local`を指定できます。
 
+local image buildのbase imageは公開かつdigest固定です。このbuildだけは
+`config/public-docker-client/config.json`の空設定を使用し、個人のregistry credentialや
+credential helperをBuildKit sessionへ渡しません。remote build、doctor、起動・停止では
+通常のDocker client設定を使用します。
+
 この経路はDockerのhost networkを必要とします。Docker Desktopではhost networkingの
 対応と有効化を事前に確認してください。host networkは提出コードからhostのloopback
 serviceへ到達できる範囲も増やすため、信頼できる個人の提出コードに限定し、host上の
@@ -233,7 +238,7 @@ docker system df --verbose
 
 - `permission denied`でDocker APIへ接続できない: Docker Desktopが起動済みか、WSL integrationが対象ディストリビューションで有効か確認します。
 - `~/.docker/config.json`を変更した後にJSON構文警告が出る: JSONではコメントを使えません。`credsStore`を無効化する場合は行自体を削除し、`python3 -m json.tool ~/.docker/config.json >/dev/null`で構文を確認します。
-- `error getting credentials`とWSLのvsockエラーが出る: Docker設定のJSON構文を直し、Docker Desktopを再起動してWSL側のターミナルを開き直します。
+- 通常のDocker操作で`error getting credentials`とWSLのvsockエラーが出る: Docker設定のJSON構文を直し、Docker Desktopを再起動してWSL側のターミナルを開き直します。remote Docker一括launcherのlocal buildは、公開base image専用の空設定により個人のcredential helperへ依存しません。
 - ポート7860が使用中: 既存のAlgoHintコンテナを停止するか、Composeとdocker runのどちらか一方だけを起動します。
 - `unhealthy`になる: `docker compose logs app`でGradioの起動エラーと、ボリュームの書き込み権限を確認します。
 - モデルが「利用不可」になる: コンテナ内に必要な変数名が渡っているかを確認します。値そのものはログや問い合わせへ貼り付けないでください。

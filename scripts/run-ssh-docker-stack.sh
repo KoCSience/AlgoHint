@@ -6,6 +6,7 @@ umask 077
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 compose_file="$project_root/compose.ssh.yaml"
 release_manifest="$project_root/config/gemma-server-release.conf"
+public_docker_config="$project_root/config/public-docker-client"
 remote_installer="${ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT:-$project_root/scripts/install-gemma-server-ssh.sh}"
 # shellcheck source=scripts/lib/gemma-ssh-target.sh
 . "$project_root/scripts/lib/gemma-ssh-target.sh"
@@ -72,6 +73,15 @@ done
 docker compose version >/dev/null
 if [[ ! -r "$release_manifest" ]]; then
     echo "Gemma Server release manifest is missing: $release_manifest" >&2
+    exit 2
+fi
+if [[ ! -f "$public_docker_config/config.json" ||
+    -L "$public_docker_config/config.json" ]]; then
+    echo "Public Docker client config must be a regular tracked file." >&2
+    exit 2
+fi
+if [[ "$(tr -d '[:space:]' <"$public_docker_config/config.json")" != "{}" ]]; then
+    echo "Public Docker client config must be the tracked empty JSON object." >&2
     exit 2
 fi
 expected_remote_commit="$(
@@ -234,7 +244,10 @@ fi
 compose config --quiet
 ensure_remote_release
 if [[ "$build_local" == true ]]; then
-    compose build app
+    # Both base images are public and digest-pinned. Excluding the user's
+    # registry credential helpers keeps secrets out of BuildKit sessions and
+    # avoids Docker Desktop/WSL helper failures for anonymous GHCR metadata.
+    DOCKER_CONFIG="$public_docker_config" compose build app
 elif ! docker image inspect algohint:ssh-local >/dev/null 2>&1; then
     echo "AlgoHint SSH image is missing; omit --no-build-local for the first run." >&2
     exit 2

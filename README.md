@@ -138,6 +138,8 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 `--build-remote`はremote `current/RELEASE`をmanifestの固定SHAと照合し、古い場合は
 review済みinstallerで更新してからimageをbuildします。導入結果のSHAとDocker controllerを
 再検査し、一致しなければ起動しません。2回目以降は`--build-remote`を外します。
+ローカルimageの公開・digest固定base image取得には、registry credentialを含まない
+専用Docker client configを使うため、個人のcredential helperや秘密値をBuildKitへ渡しません。
 local imageの再構築も省略する場合だけ
 `--no-build-local`を指定します。構造・前提・所有processのcleanupは
 [Docker運用ガイド](docs/docker.md#remote-docker-gemmaとの一括起動)を参照してください。
