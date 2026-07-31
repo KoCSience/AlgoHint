@@ -24,3 +24,11 @@ class HintProviderError(RuntimeError):
         self.exception_type = exception_type
         # Keep exception text safe even if a caller logs it accidentally.
         super().__init__(reason_code.value)
+
+
+class DraftConflictError(RuntimeError):
+    """Reject an edit based on an older server-side draft revision."""
+
+    def __init__(self, current_revision: int) -> None:
+        self.current_revision = current_revision
+        super().__init__("draft_conflict")

@@ -49,6 +49,9 @@ from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvid
 from algohint.infrastructure.sqlite_review_history_repository import (
     SqliteReviewHistoryRepository,
 )
+from algohint.infrastructure.sqlite_code_history_repository import (
+    SqliteCodeHistoryRepository,
+)
 from algohint.infrastructure.sqlite_research_history_repository import (
     SqliteResearchHistoryRepository,
 )
@@ -321,6 +324,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                     print(f"{name}: {value}")
         return
     tutor_sessions = JsonTutorSessionRepository(paths)
+    code_history = SqliteCodeHistoryRepository(paths, profile_repository)
     providers = build_hint_providers(config)
     profile_service = ProfileService(
         profile_repository,
@@ -329,6 +333,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         default_provider=config.default_hint_provider,
     )
     problem_service = ProblemService(problems)
+    submission_service = SubmissionService(
+        problems,
+        logs,
+        LocalJudgeRunner(),
+        code_history,
+    )
+    for profile in profile_repository.list_profiles():
+        submission_service.reconcile(profile.profile_id)
     services = ApplicationServices(
         profiles=profile_service,
         selections=ExerciseSelectionService(profile_service, problem_service),
@@ -340,7 +352,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             providers,
         ),
         problems=problem_service,
-        submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
+        submissions=submission_service,
         tutor=TutorService(
             problems,
             profile_repository,

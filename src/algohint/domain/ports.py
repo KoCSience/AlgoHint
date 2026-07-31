@@ -4,6 +4,9 @@ from typing import Protocol
 
 from algohint.domain.models import (
     CodeReviewEntry,
+    CodeDraft,
+    CodeSnapshot,
+    CodeSnapshotSummary,
     CodeReviewRequest,
     GeneratedCodeReview,
     GeneratedHint,
@@ -17,6 +20,7 @@ from algohint.domain.models import (
     PersonalizedQuizAttempt,
     PersonalizedQuizRequest,
     PersonalizedQuizSet,
+    PendingProgressUpdate,
     Problem,
     ProblemKnowledge,
     Profile,
@@ -35,6 +39,7 @@ from algohint.domain.models import (
     TestCase,
     TutorMessage,
     TutorSession,
+    StoredExecutionResult,
 )
 
 
@@ -66,6 +71,63 @@ class LearningLogRepository(Protocol):
     def load_log(self, profile_id: str) -> LearningLog: ...
 
     def save_log(self, log: LearningLog) -> None: ...
+
+
+class CodeHistoryRepository(Protocol):
+    """Persist mutable drafts and deduplicated learner-visible execution history."""
+
+    def load_draft(self, profile_id: str, problem_id: str) -> CodeDraft: ...
+
+    def save_draft(
+        self,
+        profile_id: str,
+        problem_id: str,
+        source: str,
+        *,
+        expected_revision: int,
+    ) -> CodeDraft: ...
+
+    def record_execution(
+        self,
+        profile_id: str,
+        problem_id: str,
+        source: str,
+        result: StoredExecutionResult,
+    ) -> tuple[CodeSnapshot, int]: ...
+
+    def list_snapshots(
+        self,
+        profile_id: str,
+        problem_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[CodeSnapshotSummary, ...]: ...
+
+    def count_snapshots(self, profile_id: str, problem_id: str) -> int: ...
+
+    def get_snapshot(
+        self,
+        profile_id: str,
+        problem_id: str,
+        snapshot_id: str,
+    ) -> CodeSnapshot: ...
+
+    def delete_snapshot(
+        self,
+        profile_id: str,
+        problem_id: str,
+        snapshot_id: str,
+    ) -> bool: ...
+
+    def pending_progress(
+        self,
+        profile_id: str,
+        *,
+        after_sequence: int,
+    ) -> tuple[PendingProgressUpdate, ...]: ...
+
+    def acknowledge_progress(self, profile_id: str, *, through_sequence: int) -> None: ...
 
 
 class ProfileRepository(Protocol):

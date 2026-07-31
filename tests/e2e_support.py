@@ -45,6 +45,9 @@ from algohint.infrastructure.rule_based_hint_provider import RuleBasedHintProvid
 from algohint.infrastructure.sqlite_review_history_repository import (
     SqliteReviewHistoryRepository,
 )
+from algohint.infrastructure.sqlite_code_history_repository import (
+    SqliteCodeHistoryRepository,
+)
 from algohint.infrastructure.sqlite_research_history_repository import (
     SqliteResearchHistoryRepository,
 )
@@ -183,6 +186,7 @@ def build_e2e_app(runtime_root: Path):
     sessions = JsonTutorSessionRepository(runtime_paths)
     provider = DeterministicGeminiProvider()
     research_history = SqliteResearchHistoryRepository(runtime_paths, profiles)
+    code_history = SqliteCodeHistoryRepository(runtime_paths, profiles)
     profile_service = ProfileService(
         profiles,
         logs,
@@ -201,7 +205,7 @@ def build_e2e_app(runtime_root: Path):
             {HintProviderId.GEMINI: provider},
         ),
         problems=problem_service,
-        submissions=SubmissionService(problems, logs, LocalJudgeRunner()),
+        submissions=SubmissionService(problems, logs, LocalJudgeRunner(), code_history),
         tutor=TutorService(
             problems,
             profiles,

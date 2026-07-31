@@ -23,6 +23,7 @@ from algohint.domain.enums import (
     QuizKind,
     QuizTopic,
     ReviewHistoryKind,
+    SubmissionMode,
     TestVisibility,
     TutorRole,
 )
@@ -209,7 +210,7 @@ class Profile(FrozenModel):
 
 
 class ProblemProgress(FrozenModel):
-    """Persisted aggregate only; submitted source is intentionally not retained."""
+    """Source-free aggregate kept separate from retained code history."""
 
     attempt_count: int = Field(default=0, ge=0)
     failed_attempt_count: int = Field(default=0, ge=0)
@@ -225,6 +226,72 @@ class LearningLog(FrozenModel):
 
     profile_id: str
     progress: dict[str, ProblemProgress] = Field(default_factory=dict)
+    last_applied_submission_sequence: int = Field(default=0, ge=0)
+
+
+class StoredLearnerDiagnostic(FrozenModel):
+    """Learner-safe diagnostic persisted without private judge output."""
+
+    status: JudgeStatus
+    summary: str = Field(min_length=1, max_length=4_096)
+    source_line: int | None = Field(default=None, ge=1)
+    source_column: int | None = Field(default=None, ge=1)
+    details: str | None = Field(default=None, max_length=4_096)
+    redacted: bool = False
+    diagnostic_id: str | None = Field(default=None, max_length=64)
+
+
+class StoredExecutionResult(FrozenModel):
+    """Latest learner-visible result for one code snapshot and judge mode."""
+
+    mode: SubmissionMode
+    executed_at: datetime
+    status: JudgeStatus
+    passed_count: int = Field(ge=0)
+    total_count: int = Field(ge=0)
+    elapsed_ms: int | None = Field(default=None, ge=0)
+    message: str = Field(min_length=1, max_length=1_000)
+    diagnostic: StoredLearnerDiagnostic | None = None
+    sample_input: str | None = None
+    actual_output: str | None = None
+    expected_output: str | None = None
+
+
+class CodeDraft(FrozenModel):
+    """Mutable profile/problem workspace protected by optimistic revision checks."""
+
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    source: str
+    revision: int = Field(default=0, ge=0)
+    updated_at: datetime | None = None
+
+
+class CodeSnapshotSummary(FrozenModel):
+    """Source-free history row safe to list before an explicit selection."""
+
+    snapshot_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_bytes: int = Field(ge=0, le=1_048_576)
+    first_executed_at: datetime
+    last_executed_at: datetime
+    sample_result: StoredExecutionResult | None = None
+    full_result: StoredExecutionResult | None = None
+
+
+class CodeSnapshot(CodeSnapshotSummary):
+    """One distinct submitted program retained until explicit learner deletion."""
+
+    source: str
+
+
+class PendingProgressUpdate(FrozenModel):
+    """Small crash-recovery event bridging SQLite history and aggregate JSON."""
+
+    sequence: int = Field(ge=1)
+    problem_id: str = Field(pattern=r"^[a-z0-9_-]+$")
+    mode: SubmissionMode
+    status: JudgeStatus
 
 
 class QuizOption(FrozenModel):

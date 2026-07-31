@@ -36,7 +36,9 @@ Exa Grounded Researchは`ResearchProvider`からprivate Gemma Serverへ委譲し
 |---|---|---|---|
 | `last_problem_id` | `profiles.json` の `ProfilePreferences` | 次回戻る問題への任意ポインタ | 初期表示とナビゲーション |
 | `hint_provider` | `profiles.json` の `ProfilePreferences` | 次回選択するモデル | プロバイダ選択 |
-| `ProblemProgress` | `learning_logs/<profile>.json` | 提出・ヒント・AC・ギブアップの学習事実 | 完了、レポート、復習解禁 |
+| `ProblemProgress` | `learning_logs/<profile>.json` | ソースを含まない提出・ヒント・AC・ギブアップの集計 | 完了、レポート、復習解禁 |
+| コードドラフト | `code_history/<profile>.sqlite3` の `drafts` | 問題別の可変ソースとrevision | エディタ復元、同時編集検査 |
+| コード実行履歴 | 同SQLiteのsnapshot/result | 異なるコード本文とsample/full別の最新安全化結果 | 提出履歴の閲覧・再利用 |
 | クラウド同意 | Gradioのブラウザセッション状態 | 今回の外部送信許可 | そのセッションの外部API呼び出し |
 | Tutor履歴 | `tutor_sessions/` | 完結した質問・回答の組 | 会話文脈の復元 |
 | 復習履歴 | `review_history/<profile>.sqlite3` | 小テスト結果、AI問題、生成済みレビュー | 復習の再表示 |
@@ -93,6 +95,28 @@ Exa Grounded Researchは`ResearchProvider`からprivate Gemma Serverへ委譲し
 一組が揃ってから行います。表示する秒数は `time.monotonic()` から求めた経過時間であり、
 推定残り時間ではありません。
 
+## コード保存と提出の流れ
+
+```text
+入力停止 / focus離脱 / 問題切替
+  -> UTF-8で1 MiB以下か検証
+  -> expected revisionとDB revisionを比較
+    -> 一致: draftを原子的に更新
+    -> 不一致: 古いタブからの上書きを拒否
+
+公開サンプル / 全テスト
+  -> LocalJudge
+  -> learner-safeな結果へ変換
+  -> SHA-256と本文一致でコードsnapshotを同定
+  -> mode別最新結果と進捗eventを同一SQLite transactionで保存
+  -> sequence未適用分をLearningLogへ一度だけ反映
+```
+
+コード長を`N`、異なる保存コード数を`S`とすると、UTF-8長とSHA-256計算は`O(N)`、
+index検索は`O(log S)`です。コードsnapshotは容量上限による自動削除をせず、明示削除
+まで保持します。削除はコード単位で関連結果も削除しますが、既に成立した学習集計や
+復習解禁は過去の事実として変更しません。
+
 ## 完了後レビューの流れ
 
 ```text
@@ -137,7 +161,7 @@ SQLiteはプロフィールごとに一ファイルとし、WAL、`BEGIN IMMEDIA
 
 コンテナ化によってホストとの境界は追加されますが、アプリと提出コードの内部構造は変えません。提出コードは`LocalJudgeRunner`から同じコンテナ内の制限付き子プロセスとして起動されます。別コンテナ化しない理由はローカル個人利用というMVPの範囲と実装の単純さを維持するためであり、信頼できない利用者向けの隔離には使用できません。
 
-提出時は、UIが `SubmissionService` へプロフィールID・問題ID・ソースを渡します。サービスは隠しケースを含むJudge結果を受け、ログを更新し、公開サンプルで失敗した場合だけ入出力差分を含むDTOへ変換します。隠しテストの詳細はUIへ渡しません。
+提出時は、UIが `SubmissionService` へプロフィールID・問題ID・ソースを渡します。サービスは隠しケースを含むJudge結果を受け、安全化した結果とコードsnapshotを保存してから集計ログを更新します。公開サンプルで失敗した場合だけ入出力差分を含むDTOへ変換し、隠しテストの詳細はUIにも履歴にも渡しません。
 
 CEと公開サンプルのREでは、学習者自身のコード位置と安全化した例外情報を表示します。
 隠しケースの例外メッセージは入力値を含み得るため、例外型と提出コードの位置だけを

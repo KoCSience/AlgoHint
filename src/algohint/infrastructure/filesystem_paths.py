@@ -42,6 +42,12 @@ class DataPaths:
         return self.runtime_dir / "review_history"
 
     @property
+    def code_history_dir(self) -> Path:
+        """Keep retained learner source separate from source-free learning logs."""
+
+        return self.runtime_dir / "code_history"
+
+    @property
     def research_history_dir(self) -> Path:
         """Keep grounded-search history private and separate from authored content."""
 
