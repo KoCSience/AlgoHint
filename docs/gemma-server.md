@@ -123,6 +123,8 @@ ALGOHINT_SSH_REMOTE_APP_ROOT='/srv/algohint-gemma-server' \
 
 installerはcredentialsやmodel weightsを作成しません。manifestのcommitがGitHubで
 未公開ならfetchで安全に失敗し、別branchや最新commitへfallbackしません。
+固定commitが公開済みの非default branchまたはtagにある場合も、source cacheの古い
+fetch設定に依存せず、公開された全branch・tagからobjectを取得してSHA一致を検証します。
 
 ## 3. Remote credentials
 

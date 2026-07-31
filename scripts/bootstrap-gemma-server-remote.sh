@@ -62,7 +62,12 @@ if [[ "$cached_repository" != "$repository" ]]; then
     exit 2
 fi
 
-git -C "$source_cache" fetch --prune origin
+# Bare caches created by older bootstrap versions can have no fetch refspec.
+# Fetch every advertised branch and tag explicitly so an immutable commit on a
+# reviewed non-default branch is available without falling back to remote HEAD.
+git -C "$source_cache" fetch --prune --prune-tags origin \
+    '+refs/heads/*:refs/remotes/origin/*' \
+    '+refs/tags/*:refs/tags/*'
 resolved_commit="$(git -C "$source_cache" rev-parse --verify "$commit^{commit}")"
 if [[ "$resolved_commit" != "$commit" ]]; then
     echo "Fetched object did not resolve to the pinned Gemma Server commit." >&2

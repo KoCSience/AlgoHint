@@ -196,6 +196,68 @@ def test_remote_bootstrap_uses_exact_commit_in_temporary_worktree(
     assert git(source_cache, "rev-parse", commit) == commit
 
 
+def test_remote_bootstrap_fetches_commit_from_non_default_branch_with_legacy_cache(
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    git(origin, "init", "-q", "-b", "main")
+    git(origin, "config", "user.name", "Test")
+    git(origin, "config", "user.email", "test@example.invalid")
+    write_executable(origin / "scripts" / "deploy-release.sh", "exit 0\n")
+    git(origin, "add", "scripts/deploy-release.sh")
+    git(origin, "commit", "-q", "-m", "default release")
+
+    source_cache = tmp_path / "cache" / "source.git"
+    source_cache.parent.mkdir()
+    subprocess.run(
+        ["git", "clone", "--bare", str(origin), str(source_cache)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    fetch_config = subprocess.run(
+        ["git", "-C", str(source_cache), "config", "--get-all", "remote.origin.fetch"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert fetch_config.returncode == 1
+
+    git(origin, "checkout", "-q", "-b", "docker-release")
+    deploy_log = tmp_path / "deploy.log"
+    write_executable(
+        origin / "scripts" / "deploy-release.sh",
+        'printf "%s\\n" "$1" >"$TEST_DEPLOY_LOG"\n',
+    )
+    git(origin, "add", "scripts/deploy-release.sh")
+    git(origin, "commit", "-q", "-m", "docker release")
+    pinned_commit = git(origin, "rev-parse", "HEAD")
+    git(origin, "checkout", "-q", "main")
+
+    completed = subprocess.run(
+        [
+            str(REMOTE_BOOTSTRAP),
+            str(origin),
+            pinned_commit,
+            str(tmp_path / "install"),
+            str(source_cache),
+        ],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "TEST_DEPLOY_LOG": str(deploy_log),
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert deploy_log.read_text(encoding="utf-8").strip() == pinned_commit
+    assert git(source_cache, "cat-file", "-t", pinned_commit) == "commit"
+
+
 def test_remote_bootstrap_refuses_cache_with_different_origin(tmp_path: Path) -> None:
     cache = tmp_path / "cache.git"
     cache.mkdir()
