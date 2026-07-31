@@ -9,6 +9,7 @@ from typing import Protocol, cast
 from algohint.application.config import AppConfig
 from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.completion_service import CompletionService
+from algohint.application.code_workspace_service import CodeWorkspaceService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
@@ -353,6 +354,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         ),
         problems=problem_service,
         submissions=submission_service,
+        workspace=CodeWorkspaceService(code_history),
         tutor=TutorService(
             problems,
             profile_repository,

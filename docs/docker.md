@@ -172,11 +172,15 @@ Rebuild Containerでも復旧せず、インストール済みの開発依存を
 docker volume rm algohint-dev-venv
 ```
 
-これは開発用仮想環境だけを削除し、次回のRebuild Containerで再作成します。プロフィールと学習履歴を持つ`algohint-runtime`は削除しないでください。
+これは開発用仮想環境だけを削除し、次回のRebuild Containerで再作成します。プロフィール、
+学習履歴、提出コードを持つ`algohint-runtime`は削除しないでください。
 
 ## データの管理
 
-永続化するデータは`/opt/algohint/data/runtime`だけです。教材はイメージに含まれ、コンテナ実行中には変更しません。
+永続化するデータは`/opt/algohint/data/runtime`だけです。教材はイメージに含まれ、
+コンテナ実行中には変更しません。runtimeにはプロフィールと集計だけでなく、
+`code_history/`のドラフト・提出コードも平文で含まれます。volumeのバックアップ、
+export、snapshotを機密データとして管理してください。
 
 ボリュームの場所と利用状況は次で確認できます。
 
@@ -185,7 +189,9 @@ docker volume inspect algohint-runtime
 docker system df --verbose
 ```
 
-`docker compose down --volumes`または`docker volume rm algohint-runtime`は、プロフィールと全学習履歴を削除します。バックアップを確認したうえで、初期化する意図がある場合だけ実行してください。
+`docker compose down --volumes`または`docker volume rm algohint-runtime`は、プロフィール、
+全学習履歴、ドラフト、提出コード履歴を削除します。バックアップを確認したうえで、
+初期化する意図がある場合だけ実行してください。
 
 ## トラブルシューティング
 

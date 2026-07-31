@@ -142,6 +142,13 @@ def test_hint_coach_in_rendered_browser(
     editor.fill("raise ValueError('visible sample failure')")
     page.locator("#sample-submit").click()
     expect(page.locator("#submission-result")).to_contain_text("RE")
+    expect(page.locator("#draft-status")).to_contain_text("保存済み")
+    page.get_by_text("提出コード履歴", exact=True).click()
+    history_selector = page.locator("#code-history-selector")
+    history_selector.get_by_role("combobox").click()
+    page.get_by_role("option", name=re.compile("公開サンプル:RE")).click()
+    expect(page.locator("#code-history-source")).to_contain_text("visible sample failure")
+    expect(page.locator("#code-history-result")).to_contain_text("公開サンプル: RE")
 
     page.locator("#result-hint").click()
     expect(page.locator("#tutor-status")).to_contain_text("回答を表示しました")

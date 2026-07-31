@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from algohint.application.completion_service import CompletionService
+from algohint.application.code_workspace_service import CodeWorkspaceService
 from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
@@ -56,6 +57,9 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
                 LocalJudgeRunner(),
                 SqliteCodeHistoryRepository(paths, profile_repository),
             ),
+            workspace=CodeWorkspaceService(
+                SqliteCodeHistoryRepository(paths, profile_repository)
+            ),
             tutor=TutorService(
                 problems,
                 profile_repository,
@@ -88,6 +92,9 @@ def test_gradio_app_builds_without_teacher_tab_data(tmp_path: Path) -> None:
     assert "固定小テストを採点" in config_text
     assert "保存済みAIレビューを表示" in config_text
     assert "現在コードを新規AIレビュー" in config_text
+    assert "提出コード履歴" in config_text
+    assert "現在のドラフトへ反映" in config_text
+    assert "algohintAutosaveBound" in config_text
     assert "根拠付きWeb検索（Exa）" in config_text
     assert "コード、質問、プロフィール、履歴、隠しテストは送信しません" in config_text
 

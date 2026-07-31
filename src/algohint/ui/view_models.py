@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from algohint.application.completion_review_service import CompletionReviewService
 from algohint.application.completion_service import CompletionService
+from algohint.application.code_workspace_service import CodeWorkspaceService
 from algohint.application.exercise_selection_service import ExerciseSelectionService
 from algohint.application.learning_report_service import LearningReportService
 from algohint.application.problem_service import ProblemService
@@ -23,6 +24,7 @@ class ApplicationServices:
     reviews: CompletionReviewService
     problems: ProblemService
     submissions: SubmissionService
+    workspace: CodeWorkspaceService
     tutor: TutorService
     completions: CompletionService
     reports: LearningReportService

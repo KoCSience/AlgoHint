@@ -3,11 +3,13 @@
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from html import escape
 from typing import Any, cast
 
 import gradio as gr
 
 from algohint.application.dto import LearnerDiagnostic
+from algohint.application.code_workspace_service import DEFAULT_HISTORY_PAGE_SIZE
 from algohint.application.completion_review_service import (
     CodeReviewUnavailableError,
     CompletionRequiredError,
@@ -27,12 +29,15 @@ from algohint.domain.enums import (
     SubmissionMode,
     TutorRole,
 )
+from algohint.domain.errors import DraftConflictError
 from algohint.domain.models import (
+    CodeSnapshotSummary,
     ProviderAvailability,
     ResearchHistoryEntry,
     ResearchResult,
     ResearchUsage,
     TutorSession,
+    StoredExecutionResult,
 )
 from algohint.infrastructure.gemma_research_provider import ResearchProviderError
 from algohint.ui.formatters import (
@@ -135,6 +140,37 @@ COMPLETION_TAB_TOOLTIP_SCRIPT = """
   // explanation after every relevant render instead of binding only once.
   applyDescription();
   new MutationObserver(applyDescription).observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}
+""".strip()
+DRAFT_AUTOSAVE_SCRIPT = """
+() => {
+  const bindAutosave = () => {
+    const editor = document.querySelector('#code-editor');
+    if (!(editor instanceof HTMLElement)
+        || editor.dataset.algohintAutosaveBound === 'true') return;
+    editor.dataset.algohintAutosaveBound = 'true';
+    let pending = 0;
+    const save = () => {
+      const button = document.querySelector(
+        'button#save-code-draft, #save-code-draft button, #save-code-draft'
+      );
+      if (button instanceof HTMLElement) button.click();
+    };
+    editor.addEventListener('input', () => {
+      window.clearTimeout(pending);
+      pending = window.setTimeout(save, 2000);
+    });
+    editor.addEventListener('focusout', (event) => {
+      if (editor.contains(event.relatedTarget)) return;
+      window.clearTimeout(pending);
+      save();
+    });
+  };
+  bindAutosave();
+  new MutationObserver(bindAutosave).observe(document.body, {
     childList: true,
     subtree: true,
   });
@@ -263,6 +299,47 @@ def _format_research_history(entries: tuple[ResearchHistoryEntry, ...]) -> str:
     return "\n".join(lines)
 
 
+def _format_stored_execution(result: StoredExecutionResult | None, label: str) -> str:
+    """Render only the learner-safe result persisted at the judge boundary."""
+
+    if result is None:
+        return f"### {label}\n\n実行履歴はありません。"
+    text = (
+        f"### {label}: {result.status}\n\n"
+        f"{result.executed_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"通過: {result.passed_count}/{result.total_count}"
+    )
+    if result.elapsed_ms is not None:
+        text += f"\n\n実行時間: {result.elapsed_ms} ms"
+    if result.diagnostic is not None:
+        text += f"\n\n診断: {escape(result.diagnostic.summary)}"
+        if result.diagnostic.source_line is not None:
+            text += f"（提出コード {result.diagnostic.source_line}行目）"
+        if result.diagnostic.details:
+            text += f"\n\n<pre>{escape(result.diagnostic.details)}</pre>"
+        if result.diagnostic.redacted:
+            text += "\n\n隠しテスト由来の値は保存していません。"
+    if result.sample_input is not None:
+        text += f"\n\n公開サンプル入力:\n<pre>{escape(result.sample_input.rstrip())}</pre>"
+    if result.actual_output is not None:
+        text += f"\n\n実際の出力:\n<pre>{escape(result.actual_output.rstrip())}</pre>"
+    if result.expected_output is not None:
+        text += f"\n\n期待する出力:\n<pre>{escape(result.expected_output.rstrip())}</pre>"
+    return text
+
+
+def _snapshot_label(snapshot: CodeSnapshotSummary) -> str:
+    """Create a compact source-free selector label with both mode tags."""
+
+    tags: list[str] = []
+    if snapshot.sample_result is not None:
+        tags.append(f"公開サンプル:{snapshot.sample_result.status}")
+    if snapshot.full_result is not None:
+        tags.append(f"全テスト:{snapshot.full_result.status}")
+    timestamp = snapshot.last_executed_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    return f"{timestamp} | {' / '.join(tags)} | {snapshot.source_sha256[:8]}"
+
+
 def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bool) -> gr.Blocks:
     """Build one contextual learning workspace without exposing private judge data."""
 
@@ -307,6 +384,22 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         if default_profile is not None and initial_problem_id is not None
         else None
     )
+    initial_draft = (
+        services.workspace.load_draft(
+            default_profile.profile_id,
+            initial_problem_id,
+        )
+        if default_profile is not None and initial_problem_id is not None
+        else None
+    )
+    initial_code_history = (
+        services.workspace.history(
+            default_profile.profile_id,
+            initial_problem_id,
+        )
+        if default_profile is not None and initial_problem_id is not None
+        else ((), 0)
+    )
     initial_quiz_questions = initial_review.questions if initial_review is not None else ()
     initial_quiz_history = (
         services.reviews.quiz_history(
@@ -346,6 +439,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
     )
 
     with gr.Blocks(title="AlgoHint Coach") as app:
+        gr.HTML("<style>.algohint-hidden-control { display: none !important; }</style>")
         gr.Markdown("# AlgoHint Coach\n\n自分で考えるための段階的ヒント付きアルゴリズム練習")
         gr.Markdown(safety_note)
         if teacher_mode:
@@ -405,6 +499,13 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             latest_diagnostic = gr.State(value=None)
             accepted_source = gr.State(value="")
             personalized_quiz_trigger = gr.State(value=False)
+            draft_revision = gr.State(
+                value=initial_draft.revision if initial_draft is not None else 0
+            )
+            editor_profile_id = gr.State(
+                value=default_profile.profile_id if default_profile is not None else None
+            )
+            editor_problem_id = gr.State(value=initial_problem_id)
             with gr.Row(equal_height=False):
                 with gr.Column(scale=6, min_width=360):
                     problem_header = gr.Markdown(initial_problem_header)
@@ -413,8 +514,21 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                     code = gr.Code(
                         label="Pythonコード",
                         language="python",
-                        value="",
+                        value=initial_draft.source if initial_draft is not None else "",
                         elem_id="code-editor",
+                    )
+                    draft_status = gr.Markdown(
+                        (
+                            "保存済みドラフトを読み込みました。"
+                            if initial_draft is not None and initial_draft.revision
+                            else "入力したコードは問題ごとに自動保存されます。"
+                        ),
+                        elem_id="draft-status",
+                    )
+                    save_code_draft = gr.Button(
+                        "ドラフトを保存",
+                        elem_id="save-code-draft",
+                        elem_classes=["algohint-hidden-control"],
                     )
                     with gr.Row():
                         sample_submit = gr.Button(
@@ -427,6 +541,65 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                             elem_id="full-submit",
                         )
                     submission_result = gr.Markdown("", elem_id="submission-result")
+
+                    with gr.Accordion("提出コード履歴", open=False):
+                        initial_history_entries, initial_history_total = initial_code_history
+                        code_history_selector = gr.Dropdown(
+                            choices=[
+                                (_snapshot_label(entry), entry.snapshot_id)
+                                for entry in initial_history_entries
+                            ],
+                            label="保存済みコード",
+                            value=None,
+                            elem_id="code-history-selector",
+                        )
+                        code_history_page = gr.State(value=0)
+                        code_history_summary = gr.Markdown(
+                            f"異なるコード: {initial_history_total}件",
+                            elem_id="code-history-summary",
+                        )
+                        code_history_source = gr.Code(
+                            label="選択したコード（読み取り専用）",
+                            language="python",
+                            value="",
+                            interactive=False,
+                            elem_id="code-history-source",
+                        )
+                        code_history_result = gr.Markdown(
+                            "履歴を選択すると安全化済みの最新結果を表示します。",
+                            elem_id="code-history-result",
+                        )
+                        with gr.Row():
+                            apply_code_history = gr.Button(
+                                "現在のドラフトへ反映",
+                                interactive=False,
+                                elem_id="apply-code-history",
+                            )
+                            delete_code_history = gr.Button(
+                                "選択したコード履歴を削除",
+                                variant="stop",
+                                interactive=False,
+                                elem_id="delete-code-history",
+                            )
+                        confirm_code_history_delete = gr.Checkbox(
+                            label=(
+                                "選択したコードと公開サンプル／全テスト結果を"
+                                "復元不能として削除することを確認しました"
+                            ),
+                            value=False,
+                            elem_id="confirm-code-history-delete",
+                        )
+                        with gr.Row():
+                            previous_code_history = gr.Button(
+                                "新しい履歴へ",
+                                visible=False,
+                                elem_id="previous-code-history",
+                            )
+                            next_code_history = gr.Button(
+                                "古い履歴へ",
+                                visible=initial_history_total > DEFAULT_HISTORY_PAGE_SIZE,
+                                elem_id="next-code-history",
+                            )
 
                     gr.Markdown("## ヒントコーチ")
                     tutor_chat = gr.Chatbot(
@@ -726,6 +899,213 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
         if teacher_mode:
             with gr.Tab("教師用"):
                 teacher_result = gr.Markdown("問題を選択すると模範解答と隠しテストを表示します。")
+
+        def load_editor_workspace(
+            profile_id: str | None,
+            problem_id: str | None,
+        ):
+            """Restore the exact profile/problem draft after navigation settles."""
+
+            if not profile_id or not problem_id:
+                return "", 0, profile_id, problem_id, "プロフィールと問題を選択してください。"
+            draft = services.workspace.load_draft(profile_id, problem_id)
+            status = (
+                f"保存済みドラフトを読み込みました（revision {draft.revision}）。"
+                if draft.revision
+                else "この問題には保存済みドラフトがありません。"
+            )
+            return draft.source, draft.revision, profile_id, problem_id, status
+
+        def save_draft_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            source: str,
+            revision: int,
+        ):
+            """Autosave without allowing an older browser tab to overwrite a draft."""
+
+            if not profile_id or not problem_id:
+                return revision, "プロフィールと問題を選択すると自動保存を開始します。"
+            try:
+                saved = services.workspace.save_draft(
+                    profile_id,
+                    problem_id,
+                    source,
+                    expected_revision=revision,
+                )
+            except DraftConflictError:
+                return (
+                    revision,
+                    "⚠️ 他のタブでこのドラフトが更新されました。"
+                    "サーバー版を読み込むまで自動上書きしません。",
+                )
+            except (OSError, ValueError) as error:
+                return revision, f"⚠️ ドラフトを保存できませんでした: {error}"
+            timestamp = (
+                saved.updated_at.astimezone().strftime("%H:%M:%S")
+                if saved.updated_at is not None
+                else ""
+            )
+            return saved.revision, f"保存済み {timestamp}（revision {saved.revision}）"
+
+        def load_code_history(
+            profile_id: str | None,
+            problem_id: str | None,
+            page: int = 0,
+        ):
+            if not profile_id or not problem_id:
+                return (
+                    gr.Dropdown(choices=[], value=None),
+                    "プロフィールと問題を選択してください。",
+                    0,
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+            entries, total = services.workspace.history(profile_id, problem_id, page=page)
+            max_page = max(0, (total - 1) // DEFAULT_HISTORY_PAGE_SIZE)
+            resolved_page = min(page, max_page)
+            if resolved_page != page:
+                entries, total = services.workspace.history(
+                    profile_id,
+                    problem_id,
+                    page=resolved_page,
+                )
+            return (
+                gr.Dropdown(
+                    choices=[(_snapshot_label(entry), entry.snapshot_id) for entry in entries],
+                    value=None,
+                ),
+                f"異なるコード: {total}件（{resolved_page + 1}ページ目）",
+                resolved_page,
+                gr.Button(visible=resolved_page > 0),
+                gr.Button(
+                    visible=(resolved_page + 1) * DEFAULT_HISTORY_PAGE_SIZE < total
+                ),
+            )
+
+        def preview_code_history(
+            profile_id: str | None,
+            problem_id: str | None,
+            snapshot_id: str | None,
+        ):
+            if not profile_id or not problem_id or not snapshot_id:
+                return (
+                    "",
+                    "履歴を選択してください。",
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
+                    False,
+                )
+            try:
+                snapshot = services.workspace.get_snapshot(
+                    profile_id,
+                    problem_id,
+                    snapshot_id,
+                )
+            except KeyError:
+                return (
+                    "",
+                    "選択した履歴は削除済みです。一覧を更新してください。",
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
+                    False,
+                )
+            result_text = "\n\n".join(
+                (
+                    _format_stored_execution(
+                        snapshot.sample_result,
+                        "公開サンプル",
+                    ),
+                    _format_stored_execution(snapshot.full_result, "全テスト"),
+                )
+            )
+            return (
+                snapshot.source,
+                result_text,
+                gr.Button(interactive=True),
+                gr.Button(interactive=True),
+                False,
+            )
+
+        def apply_code_history_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            snapshot_id: str | None,
+            revision: int,
+        ):
+            if not profile_id or not problem_id or not snapshot_id:
+                return gr.skip(), revision, "反映するコード履歴を選択してください。"
+            snapshot = services.workspace.get_snapshot(profile_id, problem_id, snapshot_id)
+            try:
+                saved = services.workspace.save_draft(
+                    profile_id,
+                    problem_id,
+                    snapshot.source,
+                    expected_revision=revision,
+                )
+            except DraftConflictError:
+                return (
+                    gr.skip(),
+                    revision,
+                    "⚠️ 他のタブで更新されたため、履歴コードを反映しませんでした。",
+                )
+            return (
+                snapshot.source,
+                saved.revision,
+                f"履歴コードをドラフトへ反映しました（revision {saved.revision}）。",
+            )
+
+        def delete_code_history_ui(
+            profile_id: str | None,
+            problem_id: str | None,
+            snapshot_id: str | None,
+            confirmed: bool,
+            page: int,
+        ):
+            if not profile_id or not problem_id or not snapshot_id:
+                return (
+                    gr.Dropdown(),
+                    "削除する履歴を選択してください。",
+                    page,
+                    gr.Button(),
+                    gr.Button(),
+                    "",
+                    "履歴を選択してください。",
+                    gr.Button(interactive=False),
+                    gr.Button(interactive=False),
+                    False,
+                )
+            if not confirmed:
+                return (
+                    gr.Dropdown(),
+                    "削除確認にチェックしてください。",
+                    page,
+                    gr.Button(),
+                    gr.Button(),
+                    gr.skip(),
+                    gr.skip(),
+                    gr.Button(),
+                    gr.Button(),
+                    False,
+                )
+            services.workspace.delete_snapshot(profile_id, problem_id, snapshot_id)
+            selector, summary, resolved_page, previous, next_button = load_code_history(
+                profile_id,
+                problem_id,
+                page,
+            )
+            return (
+                selector,
+                summary,
+                resolved_page,
+                previous,
+                next_button,
+                "",
+                "選択したコード履歴を削除しました。学習集計は変更していません。",
+                gr.Button(interactive=False),
+                gr.Button(interactive=False),
+                False,
+            )
 
         def selected_problem(profile_id: str | None, problem_id: str | None):
             if not problem_id:
@@ -1703,6 +2083,30 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             api_visibility="private",
         )
         problem_selection_event.then(
+            load_editor_workspace,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code,
+                draft_revision,
+                editor_profile_id,
+                editor_problem_id,
+                draft_status,
+            ],
+            api_visibility="private",
+        )
+        problem_selection_event.then(
+            load_code_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
+            api_visibility="private",
+        )
+        problem_selection_event.then(
             load_quiz_history,
             inputs=[profile_selector, problem_selector],
             outputs=[
@@ -1735,7 +2139,7 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=[research_consent, research_result, research_usage],
             api_visibility="private",
         )
-        create_profile.click(
+        create_profile_event = create_profile.click(
             created_profile,
             inputs=profile_name,
             outputs=[
@@ -1754,6 +2158,30 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 submission_result,
             ],
             api_name="create_profile",
+        )
+        create_profile_event.then(
+            load_editor_workspace,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code,
+                draft_revision,
+                editor_profile_id,
+                editor_problem_id,
+                draft_status,
+            ],
+            api_visibility="private",
+        )
+        create_profile_event.then(
+            load_code_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
+            api_visibility="private",
         )
         profile_selection_event = profile_selector.change(
             selected_profile,
@@ -1777,6 +2205,30 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             load_completion,
             inputs=[profile_selector, problem_selector],
             outputs=completion_outputs,
+            api_visibility="private",
+        )
+        profile_selection_event.then(
+            load_editor_workspace,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code,
+                draft_revision,
+                editor_profile_id,
+                editor_problem_id,
+                draft_status,
+            ],
+            api_visibility="private",
+        )
+        profile_selection_event.then(
+            load_code_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
             api_visibility="private",
         )
         profile_selection_event.then(
@@ -1824,13 +2276,49 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             outputs=quiz_mode_selector,
             api_name="select_personalized_quiz_mode",
         )
-        sample_submit.click(
+        save_code_draft.click(
+            save_draft_ui,
+            inputs=[
+                editor_profile_id,
+                editor_problem_id,
+                code,
+                draft_revision,
+            ],
+            outputs=[draft_revision, draft_status],
+            api_visibility="private",
+            trigger_mode="always_last",
+            show_progress="hidden",
+        )
+        sample_submission_event = sample_submit.click(
             lambda profile, problem, source: submit(
                 profile, problem, source, SubmissionMode.SAMPLE
             ),
             inputs=[profile_selector, problem_selector, code],
             outputs=[submission_result, latest_diagnostic],
             api_name="run_samples",
+        )
+        sample_submission_event.then(
+            load_code_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
+            api_visibility="private",
+        )
+        sample_submission_event.then(
+            save_draft_ui,
+            inputs=[
+                editor_profile_id,
+                editor_problem_id,
+                code,
+                draft_revision,
+            ],
+            outputs=[draft_revision, draft_status],
+            api_visibility="private",
         )
         full_submission_event = full_submit.click(
             submit_full,
@@ -1864,6 +2352,29 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
                 previous_quiz_history,
                 next_quiz_history,
             ],
+            api_visibility="private",
+        )
+        completion_loaded_event.then(
+            load_code_history,
+            inputs=[profile_selector, problem_selector],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
+            api_visibility="private",
+        )
+        completion_loaded_event.then(
+            save_draft_ui,
+            inputs=[
+                editor_profile_id,
+                editor_problem_id,
+                code,
+                draft_revision,
+            ],
+            outputs=[draft_revision, draft_status],
             api_visibility="private",
         )
         completion_loaded_event.then(
@@ -2116,6 +2627,84 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
             ],
             api_visibility="private",
         )
+        code_history_selector.change(
+            preview_code_history,
+            inputs=[profile_selector, problem_selector, code_history_selector],
+            outputs=[
+                code_history_source,
+                code_history_result,
+                apply_code_history,
+                delete_code_history,
+                confirm_code_history_delete,
+            ],
+            api_visibility="private",
+        )
+        apply_code_history.click(
+            apply_code_history_ui,
+            inputs=[
+                editor_profile_id,
+                editor_problem_id,
+                code_history_selector,
+                draft_revision,
+            ],
+            outputs=[code, draft_revision, draft_status],
+            api_visibility="private",
+        )
+        delete_code_history.click(
+            delete_code_history_ui,
+            inputs=[
+                profile_selector,
+                problem_selector,
+                code_history_selector,
+                confirm_code_history_delete,
+                code_history_page,
+            ],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+                code_history_source,
+                code_history_result,
+                apply_code_history,
+                delete_code_history,
+                confirm_code_history_delete,
+            ],
+            api_visibility="private",
+        )
+        previous_code_history.click(
+            lambda profile, problem, page: load_code_history(
+                profile,
+                problem,
+                max(0, page - 1),
+            ),
+            inputs=[profile_selector, problem_selector, code_history_page],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
+            api_visibility="private",
+        )
+        next_code_history.click(
+            lambda profile, problem, page: load_code_history(
+                profile,
+                problem,
+                page + 1,
+            ),
+            inputs=[profile_selector, problem_selector, code_history_page],
+            outputs=[
+                code_history_selector,
+                code_history_summary,
+                code_history_page,
+                previous_code_history,
+                next_code_history,
+            ],
+            api_visibility="private",
+        )
         show_saved_code_reviews.click(
             load_code_review_state,
             inputs=[profile_selector, problem_selector],
@@ -2178,5 +2767,6 @@ def build_app(services: ApplicationServices, teacher_mode: bool, shared_mode: bo
 
         app.load(fn=None, js=QUESTION_SHORTCUT_SCRIPT, queue=False)
         app.load(fn=None, js=COMPLETION_TAB_TOOLTIP_SCRIPT, queue=False)
+        app.load(fn=None, js=DRAFT_AUTOSAVE_SCRIPT, queue=False)
 
     return app.queue(default_concurrency_limit=1)
