@@ -190,3 +190,53 @@ def test_post_stop_verification_failure_is_reported(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "did not reach a verified stopped state" in result.stderr
+
+
+def test_snapshot_accepts_safe_stale_pid_warning_as_stopped(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    home = tmp_path / "home"
+    config = home / ".config" / "algohint"
+    config.mkdir(parents=True)
+    config.chmod(0o700)
+    target = config / "gemma-ssh-target"
+    target.write_text("gpu-learning-host\n", encoding="ascii")
+    target.chmod(0o600)
+    remote_root = tmp_path / "remote-app"
+    current = remote_root / "current"
+    (current / "scripts").mkdir(parents=True)
+    (current / "RELEASE").write_text(
+        "commit=f043147feab0fe233615447cdf156f0fb4063a88\n",
+        encoding="ascii",
+    )
+    _write_executable(
+        current / "scripts" / "server-control.sh",
+        'printf "tmux: not-running (algohint-gemma)\\n"\n'
+        'printf "process: WARNING pid=123 is absent or not the expected Gemma process\\n"\n',
+    )
+    _write_executable(
+        current / "scripts" / "docker-control.sh",
+        'printf "container: not-running\\n"\n',
+    )
+    _write_executable(
+        fake_bin / "ssh",
+        'if [[ "$*" == *\'printf "%s\\n" "$HOME"\'* ]]; then\n'
+        '  printf "%s\\n" "$FAKE_REMOTE_HOME"\n'
+        "else\n"
+        '  exec bash -s -- "$FAKE_REMOTE_ROOT"\n'
+        "fi\n",
+    )
+    environment = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_REMOTE_HOME": str(tmp_path),
+        "FAKE_REMOTE_ROOT": str(remote_root),
+        "ALGOHINT_SSH_REMOTE_APP_ROOT": str(remote_root),
+    }
+
+    result = _run(environment, "--status")
+
+    assert result.returncode == 0, result.stderr
+    assert "native: stopped" in result.stdout
+    assert "docker: stopped" in result.stdout

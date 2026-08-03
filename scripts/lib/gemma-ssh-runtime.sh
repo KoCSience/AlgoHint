@@ -36,7 +36,9 @@ if [[ -x "$native_control" ]]; then
     if grep -qE '^tmux: running|^process: running' <<<"$native_status"; then
         native="running"
     elif grep -q '^tmux: not-running' <<<"$native_status" &&
-        grep -q '^process: not-running' <<<"$native_status"; then
+        grep -qE '^process: (not-running|WARNING)' <<<"$native_status"; then
+        # A stale PID warning is the controller's safe stopped state: it did
+        # not find a validated process that it owns and therefore sent no signal.
         native="stopped"
     else
         native="unknown"
