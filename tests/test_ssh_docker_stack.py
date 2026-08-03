@@ -68,6 +68,16 @@ def stack_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
         'printf "ssh %s\\n" "$*" >>"$FAKE_CALLS"\n'
         'if [[ "$*" == *\'printf "%s\\n" "$HOME"\'* ]]; then\n'
         "  echo /remote/learner\n"
+        'elif [[ "$*" == *"bash -s -- \'/remote/learner/programs/algohint-gemma-server\'"* ]]; then\n'
+        '  release="${FAKE_REMOTE_RELEASE:-$FAKE_EXPECTED_REMOTE_COMMIT}"\n'
+        '  if [[ -e "$FAKE_INSTALLED_MARKER" ]]; then release="$FAKE_EXPECTED_REMOTE_COMMIT"; fi\n'
+        '  native=stopped\n'
+        '  docker=stopped\n'
+        '  if [[ "${FAKE_NATIVE_RUNNING:-0}" == "1" ]]; then native=running; fi\n'
+        '  if [[ "${FAKE_REMOTE_RUNNING:-0}" == "1" ]]; then docker=running; fi\n'
+        '  health=unavailable\n'
+        '  if [[ "$native" == running || "$docker" == running ]]; then health=ready; fi\n'
+        '  printf "release=%s\\nnative=%s\\ndocker=%s\\nhealth=%s\\n" "$release" "$native" "$docker" "$health"\n'
         'elif [[ "$*" == *"current/RELEASE"* ]]; then\n'
         '  if [[ -e "$FAKE_INSTALLED_MARKER" ]]; then\n'
         '    printf "%s\\n" "$FAKE_EXPECTED_REMOTE_COMMIT"\n'
@@ -234,6 +244,29 @@ def test_old_release_without_build_flag_is_not_modified(tmp_path: Path) -> None:
     assert "installer" not in recorded
     assert " build app" not in recorded
     assert "'start'" not in recorded
+
+
+def test_native_runtime_conflict_uses_common_stop_guidance_before_build(
+    tmp_path: Path,
+) -> None:
+    environment, calls = stack_environment(tmp_path)
+    environment["FAKE_NATIVE_RUNNING"] = "1"
+
+    completed = subprocess.run(
+        [str(LAUNCHER), "--build-remote"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 2
+    assert "./scripts/stop-gemma-server-ssh.sh" in completed.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "installer" not in recorded
+    assert " build app" not in recorded
+    assert "'build'" not in recorded
 
 
 def test_installer_failure_stops_before_any_image_build(tmp_path: Path) -> None:

@@ -73,6 +73,25 @@ printf 'release=%s\nnative=%s\ndocker=%s\nhealth=%s\n' \
 REMOTE
 }
 
+algohint_refresh_remote_runtime_state() {
+    local ssh_target="$1"
+    local remote_app_root="$2"
+    local snapshot
+    if ! snapshot="$(
+        algohint_remote_runtime_snapshot "$ssh_target" "$remote_app_root"
+    )"; then
+        return 1
+    fi
+    ALGOHINT_REMOTE_RELEASE="$(sed -n 's/^release=//p' <<<"$snapshot")"
+    ALGOHINT_REMOTE_NATIVE_STATE="$(sed -n 's/^native=//p' <<<"$snapshot")"
+    ALGOHINT_REMOTE_DOCKER_STATE="$(sed -n 's/^docker=//p' <<<"$snapshot")"
+    ALGOHINT_REMOTE_HEALTH_STATE="$(sed -n 's/^health=//p' <<<"$snapshot")"
+    [[ "$ALGOHINT_REMOTE_RELEASE" =~ ^([0-9a-f]{40}|missing|invalid)$ ]] &&
+        [[ "$ALGOHINT_REMOTE_NATIVE_STATE" =~ ^(running|stopped|missing|unknown)$ ]] &&
+        [[ "$ALGOHINT_REMOTE_DOCKER_STATE" =~ ^(running|stopped|missing|unknown)$ ]] &&
+        [[ "$ALGOHINT_REMOTE_HEALTH_STATE" =~ ^(ready|unavailable|unexpected)$ ]]
+}
+
 algohint_print_remote_stop_guidance() {
     cat >&2 <<'MESSAGE'
 A managed Gemma runtime must be stopped before switching releases.

@@ -68,21 +68,14 @@ if [[ "$remote_app_root" != /* || "$remote_app_root" == "/" ||
 fi
 
 read_snapshot() {
-    local snapshot
-    if ! snapshot="$(
-        algohint_remote_runtime_snapshot "$ssh_target" "$remote_app_root"
-    )"; then
+    if ! algohint_refresh_remote_runtime_state "$ssh_target" "$remote_app_root"; then
         echo "Could not inspect managed Gemma runtimes over SSH." >&2
         exit 2
     fi
-    release="$(sed -n 's/^release=//p' <<<"$snapshot")"
-    native_state="$(sed -n 's/^native=//p' <<<"$snapshot")"
-    docker_state="$(sed -n 's/^docker=//p' <<<"$snapshot")"
-    health_state="$(sed -n 's/^health=//p' <<<"$snapshot")"
-    [[ "$release" =~ ^([0-9a-f]{40}|missing|invalid)$ ]] || return 1
-    [[ "$native_state" =~ ^(running|stopped|missing|unknown)$ ]] || return 1
-    [[ "$docker_state" =~ ^(running|stopped|missing|unknown)$ ]] || return 1
-    [[ "$health_state" =~ ^(ready|unavailable|unexpected)$ ]] || return 1
+    release="$ALGOHINT_REMOTE_RELEASE"
+    native_state="$ALGOHINT_REMOTE_NATIVE_STATE"
+    docker_state="$ALGOHINT_REMOTE_DOCKER_STATE"
+    health_state="$ALGOHINT_REMOTE_HEALTH_STATE"
 }
 
 print_snapshot() {

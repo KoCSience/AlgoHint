@@ -8,6 +8,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
 SCRIPTS = PROJECT_ROOT / "scripts"
+EXPECTED_REMOTE_COMMIT = next(
+    line.split("=", maxsplit=1)[1].strip("'")
+    for line in (PROJECT_ROOT / "config" / "gemma-server-release.conf")
+    .read_text(encoding="utf-8")
+    .splitlines()
+    if line.startswith("ALGOHINT_GEMMA_SERVER_COMMIT=")
+)
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -426,6 +433,7 @@ def _ssh_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     local_home = tmp_path / "local-home"
     local_home.mkdir()
     _write_ssh_target(local_home)
+    installed_marker = tmp_path / "installed"
     _write_executable(
         runner,
         """
@@ -443,6 +451,17 @@ fi
 printf 'ssh %s\\n' "$*" >>"$FAKE_CALLS"
 if [[ "$*" == *'printf \"%s\\n\" \"$HOME\"'* ]]; then
     echo '/remote/learner'
+elif [[ "$*" == *"bash -s -- '/remote/learner/programs/algohint-gemma-server'"* ]]; then
+    release="${FAKE_REMOTE_RELEASE:-$FAKE_EXPECTED_REMOTE_COMMIT}"
+    [[ -e "$FAKE_INSTALLED_MARKER" ]] && release="$FAKE_EXPECTED_REMOTE_COMMIT"
+    native=stopped
+    docker=stopped
+    [[ "${FAKE_REMOTE_RUNNING:-0}" == "1" ]] && native=running
+    [[ "${FAKE_DOCKER_RUNNING:-0}" == "1" ]] && docker=running
+    health=unavailable
+    if [[ "$native" == running || "$docker" == running ]]; then health=ready; fi
+    printf 'release=%s\nnative=%s\ndocker=%s\nhealth=%s\n' \
+      "$release" "$native" "$docker" "$health"
 elif [[ "$*" == *'test -x '* ]]; then
     exit "${FAKE_CONTROL_CHECK_EXIT:-0}"
 elif [[ "$*" == *'bash -s -- '* ]]; then
@@ -461,11 +480,19 @@ fi
 """,
     )
     _write_executable(fake_bin / "curl", "printf '{\"status\":\"ok\",\"ready\":true}\\n'\n")
+    installer = tmp_path / "installer"
+    _write_executable(
+        installer,
+        "printf 'installer\\n' >>\"$FAKE_CALLS\"\ntouch \"$FAKE_INSTALLED_MARKER\"\n",
+    )
     environment = {
             **os.environ,
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "HOME": str(local_home),
             "FAKE_CALLS": str(calls),
+            "FAKE_EXPECTED_REMOTE_COMMIT": EXPECTED_REMOTE_COMMIT,
+            "FAKE_INSTALLED_MARKER": str(installed_marker),
+            "ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT": str(installer),
             "ALGOHINT_RUN_ALGOHINT_SCRIPT": str(runner),
             "ALGOHINT_SSH_STARTUP_TIMEOUT": "2",
     }
@@ -498,6 +525,70 @@ def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None
     assert "app doctor --provider gemma --generation-probe" in recorded
     assert "deployment=remote" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
+
+
+def test_ssh_stack_rejects_old_release_before_model_start(tmp_path: Path) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    old_commit = "593c33adda1164ef2cf6c18c9437775fb85f0e65"
+    environment["FAKE_REMOTE_RELEASE"] = old_commit
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert f"Expected commit: {EXPECTED_REMOTE_COMMIT}" in result.stderr
+    assert f"Current commit: {old_commit}" in result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "installer" not in recorded
+    assert "'start'" not in recorded
+
+
+def test_ssh_stack_installs_stopped_old_release_with_explicit_flag(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    environment["FAKE_REMOTE_RELEASE"] = "593c33adda1164ef2cf6c18c9437775fb85f0e65"
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh"), "--install-remote"],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert recorded.count("installer") == 1
+    assert recorded.index("installer") < recorded.index("'start'")
+
+
+def test_ssh_stack_uses_common_stop_guidance_for_runtime_conflict(
+    tmp_path: Path,
+) -> None:
+    environment, calls = _ssh_environment(tmp_path)
+    environment["FAKE_DOCKER_RUNNING"] = "1"
+
+    result = subprocess.run(
+        [str(SCRIPTS / "run-ssh-stack.sh")],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "./scripts/stop-gemma-server-ssh.sh" in result.stderr
+    recorded = calls.read_text(encoding="utf-8")
+    assert "'start'" not in recorded
 
 
 def test_ssh_stack_uses_canonical_config_despite_stale_environment(

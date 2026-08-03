@@ -13,6 +13,8 @@ remote_installer="${ALGOHINT_INSTALL_GEMMA_SERVER_SCRIPT:-$project_root/scripts/
 . "$project_root/scripts/lib/gemma-ssh-target.sh"
 # shellcheck source=scripts/lib/gemma-stack-health.sh
 . "$project_root/scripts/lib/gemma-stack-health.sh"
+# shellcheck source=scripts/lib/gemma-ssh-runtime.sh
+. "$project_root/scripts/lib/gemma-ssh-runtime.sh"
 
 credentials_path="${ALGOHINT_CREDENTIALS:-$HOME/.config/algohint/gemma-remote-credentials}"
 local_port="${ALGOHINT_SSH_LOCAL_PORT:-18000}"
@@ -161,29 +163,39 @@ remote_control_command() {
     ssh -T "$ssh_target" "$quoted_control $(quote_remote "$action")"
 }
 
-read_remote_release() {
-    local quoted_release
-    quoted_release="$(quote_remote "$remote_app_root/current/RELEASE")"
-    ssh -T "$ssh_target" \
-        "if test -r $quoted_release; then sed -n 's/^commit=//p' $quoted_release; else printf 'missing\\n'; fi"
-}
-
 remote_controller_is_available() {
     ssh -T "$ssh_target" "test -x $quoted_control"
 }
 
+refresh_remote_runtime_state() {
+    if ! algohint_refresh_remote_runtime_state "$ssh_target" "$remote_app_root"; then
+        echo "Could not inspect the remote Gemma release and runtime state." >&2
+        exit 2
+    fi
+    if [[ "$ALGOHINT_REMOTE_NATIVE_STATE" == "unknown" ||
+        "$ALGOHINT_REMOTE_DOCKER_STATE" == "unknown" ]]; then
+        echo "A remote Gemma controller returned an ambiguous state." >&2
+        exit 2
+    fi
+}
+
 ensure_remote_release() {
-    local actual_commit
-    actual_commit="$(read_remote_release)"
-    if [[ "$actual_commit" == "$expected_remote_commit" ]] &&
+    refresh_remote_runtime_state
+    if [[ "$ALGOHINT_REMOTE_RELEASE" == "$expected_remote_commit" ]] &&
         remote_controller_is_available; then
         return
+    fi
+
+    if [[ "$ALGOHINT_REMOTE_NATIVE_STATE" == "running" ||
+        "$ALGOHINT_REMOTE_DOCKER_STATE" == "running" ]]; then
+        algohint_print_remote_stop_guidance
+        exit 2
     fi
 
     if [[ "$build_remote" != true ]]; then
         echo "Remote Gemma Docker release is not ready." >&2
         echo "Expected commit: $expected_remote_commit" >&2
-        echo "Current commit: $actual_commit" >&2
+        echo "Current commit: $ALGOHINT_REMOTE_RELEASE" >&2
         echo "Retry with --build-remote to install and build the pinned release." >&2
         exit 2
     fi
@@ -194,12 +206,12 @@ ensure_remote_release() {
 
     echo "Installing pinned Gemma Server release on $ssh_target: $expected_remote_commit"
     "$remote_installer"
-    actual_commit="$(read_remote_release)"
-    if [[ "$actual_commit" != "$expected_remote_commit" ]] ||
+    refresh_remote_runtime_state
+    if [[ "$ALGOHINT_REMOTE_RELEASE" != "$expected_remote_commit" ]] ||
         ! remote_controller_is_available; then
         echo "Pinned Gemma Server installation did not produce the expected Docker controller." >&2
         echo "Expected commit: $expected_remote_commit" >&2
-        echo "Current commit: $actual_commit" >&2
+        echo "Current commit: $ALGOHINT_REMOTE_RELEASE" >&2
         exit 2
     fi
 }
@@ -257,6 +269,10 @@ if docker container inspect "$container_name" >/dev/null 2>&1; then
 fi
 compose config --quiet
 ensure_remote_release
+if [[ "$ALGOHINT_REMOTE_NATIVE_STATE" == "running" ]]; then
+    algohint_print_remote_stop_guidance
+    exit 2
+fi
 if [[ "$build_local" == true ]]; then
     # Both base images are public and digest-pinned. Excluding the user's
     # registry credential helpers keeps secrets out of BuildKit sessions and
