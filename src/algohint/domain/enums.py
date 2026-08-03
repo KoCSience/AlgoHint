@@ -85,6 +85,17 @@ class ProviderFailureReason(StrEnum):
     UNKNOWN_PROVIDER_ERROR = "unknown_provider_error"
 
 
+class GemmaGenerationFailureCode(StrEnum):
+    """Closed Gemma Server details safe for diagnostics and remediation."""
+
+    MODEL_NOT_READY = "model_not_ready"
+    GPU_MEMORY_EXHAUSTED = "gpu_memory_exhausted"
+    CUDA_RUNTIME_FAILURE = "cuda_runtime_failure"
+    DEVICE_PLACEMENT_FAILURE = "device_placement_failure"
+    RESPONSE_PARSING_FAILURE = "response_parsing_failure"
+    UNKNOWN_GENERATION_FAILURE = "unknown_generation_failure"
+
+
 class HintTrigger(StrEnum):
     """The learner action that requested adaptive coaching."""
 

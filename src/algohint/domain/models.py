@@ -145,6 +145,10 @@ class ProviderDiagnostic(FrozenModel):
     http_status: int | None = None
     retryable: bool = False
     exception_type: str | None = None
+    provider_detail_code: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9_]{1,64}$",
+    )
     debug_details: str | None = None
 
 

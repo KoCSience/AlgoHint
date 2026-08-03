@@ -86,7 +86,8 @@ FALLBACK_NOTICES = {
         "管理用launcherからdoctor診断を実行してください。"
     ),
     ProviderFailureReason.PROVIDER_UNAVAILABLE.value: (
-        "モデルが一時的に利用できません。時間を置いて再試行してください。"
+        "モデル生成経路を利用できません。Gemmaの場合は管理用launcherから"
+        "doctor --provider gemma --generation-probeを実行してください。"
     ),
     ProviderFailureReason.EMPTY_OR_BLOCKED_RESPONSE.value: (
         "モデルの応答が空、または安全設定によりブロックされました。"

@@ -122,3 +122,10 @@ def test_endpoint_unreachable_notice_points_to_managed_diagnosis() -> None:
     assert "SSH tunnel" in notice
     assert "doctor" in notice
     assert "RuleBased" in notice
+
+
+def test_provider_unavailable_notice_points_to_generation_probe() -> None:
+    notice = _format_fallback_notice("provider_unavailable")
+
+    assert "doctor --provider gemma --generation-probe" in notice
+    assert "RuleBased" in notice

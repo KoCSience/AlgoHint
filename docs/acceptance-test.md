@@ -111,15 +111,16 @@
 - [ ] local／SSH一括起動は自分が新規起動したGemmaだけを既定停止し、起動済みGemmaを停止しない。
 - [ ] `--keep-gemma`／`--keep-remote`、Ctrl+C、異常終了でも所有サービスとトンネルを仕様どおり処理する。
 - [ ] managed launcherがcredentials読込後にloopback endpointを再適用し、古い接続設定へlearner dataを送らない。
-- [ ] health成功後に認証付きdoctorが成功した場合だけAlgoHintを起動し、失敗時は所有processをcleanupする。
+- [ ] health成功後に認証付きdoctorがmodel discovery、generation probeの順で成功した場合だけAlgoHintを起動し、失敗時は所有processをcleanupする。
 - [ ] native SSH launcherがremote ready後にだけtunnelを作り、model load中にSSHの`Connection refused`を反復表示しない。
 - [ ] remote processが15秒後も存在しない場合は900秒を待たず、安全なstatusとlog末尾を表示してcleanupする。
 - [ ] 起動後にhealthを3回連続で取得できない場合、remote serviceを自動再起動せず、UIとRuleBased fallbackを維持して警告を1回表示する。
-- [ ] Docker SSH stackがremote Docker Gemma、host tunnel、local AlgoHint containerを順に起動し、container内doctor成功後だけUIを開始する。
+- [ ] Docker SSH stackがremote Docker Gemma、host tunnel、local AlgoHint containerを順に起動し、container内generation probe成功後だけUIを開始する。
 - [ ] Docker SSH stackがSSH鍵をmountせず、既存remote containerを停止せず、自分が起動したremoteだけを既定cleanupする。
 - [ ] `--build-remote`が旧remote releaseを固定SHAへ導入して再検査し、flagなしではremoteを変更せず期待SHAと現在SHAを表示する。
 - [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
+- [ ] `algohint doctor --provider gemma --generation-probe`が固定promptだけで最大64 tokenを生成し、失敗時はclosed failure codeだけを表示する。
 - [ ] listener不在の`ConnectError`が`endpoint_unreachable`となり、502/503の`provider_unavailable`、timeout、401と区別される。
 - [ ] Chrome MCPからGemmaへ「わからない」を1回だけ要求し、provider/modelと生成ヒントが表示され、RuleBasedへ退避しない。
 - [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。

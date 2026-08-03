@@ -242,7 +242,7 @@ def test_local_stack_stops_only_gemma_it_started(tmp_path: Path) -> None:
     first_calls = calls.read_text(encoding="utf-8")
     assert "control start" in first_calls
     assert "control stop" in first_calls
-    assert "app doctor --provider gemma" in first_calls
+    assert "app doctor --provider gemma --generation-probe" in first_calls
     assert "app --port 9786" in first_calls
     assert "deployment=local" in first_calls
     assert "app_root= code_root=" in first_calls
@@ -307,7 +307,7 @@ def test_local_stack_stops_before_ui_when_contract_check_fails(
     assert result.returncode == 1
     recorded = calls.read_text(encoding="utf-8")
     assert recorded.count("app ") == 1
-    assert "app doctor --provider gemma" in recorded
+    assert "app doctor --provider gemma --generation-probe" in recorded
     assert "control stop" in recorded
     assert "AlgoHint was not started" in result.stderr
 
@@ -495,7 +495,7 @@ def test_ssh_stack_starts_tunnels_and_stops_owned_remote(tmp_path: Path) -> None
     assert " -N -T " in f" {recorded} "
     assert recorded.index("bash -s --") < recorded.index(" -N -T ")
     assert "'stop'" in recorded
-    assert "app doctor --provider gemma" in recorded
+    assert "app doctor --provider gemma --generation-probe" in recorded
     assert "deployment=remote" in recorded
     assert "base=http://127.0.0.1:18000/v1" in recorded
 
@@ -547,7 +547,7 @@ def test_ssh_stack_stops_before_ui_when_contract_check_fails(
     assert result.returncode == 1
     recorded = calls.read_text(encoding="utf-8")
     assert recorded.count("app ") == 1
-    assert "app doctor --provider gemma" in recorded
+    assert "app doctor --provider gemma --generation-probe" in recorded
     assert "'stop'" in recorded
     assert "AlgoHint was not started" in result.stderr
 

@@ -107,6 +107,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show redacted exception details when running in development",
     )
+    doctor.add_argument(
+        "--generation-probe",
+        action="store_true",
+        help="Run the authenticated server-owned Gemma generation probe",
+    )
     evaluate = commands.add_parser(
         "evaluate",
         help="Evaluate fixed research coverage and optional recorded profile runs",
@@ -157,7 +162,22 @@ class _DiagnosableProvider(Protocol):
     def diagnose(self, *, verbose: bool = False): ...
 
 
-def _print_doctor_remediation(label: str, reason_code: object) -> None:
+class _GenerationProbeProvider(Protocol):
+    """Gemma-only diagnostic extension that never accepts learner content."""
+
+    def diagnose(
+        self,
+        *,
+        verbose: bool = False,
+        generation_probe: bool = False,
+    ): ...
+
+
+def _print_doctor_remediation(
+    label: str,
+    reason_code: object,
+    provider_detail_code: str | None = None,
+) -> None:
     """Print only stable, secret-free recovery guidance for known failures."""
 
     if (
@@ -168,6 +188,18 @@ def _print_doctor_remediation(label: str, reason_code: object) -> None:
             "Gemma診断の対処: Remoteはrun-ssh-stack.sh、Localは"
             "run-local-stack.shから再診断し、Serverと接続経路を確認してください。"
         )
+    if label != "Gemma" or provider_detail_code is None:
+        return
+    remediation = {
+        "gpu_memory_exhausted": "GPU使用量、token上限、memory配置を確認してServerを再起動してください。",
+        "device_placement_failure": "固定Server releaseとdevice mapを確認してください。",
+        "cuda_runtime_failure": "GPU driver、containerのGPU割当、Server logを確認してください。",
+        "response_parsing_failure": "model revisionとTransformers parserの互換性を確認してください。",
+        "unknown_generation_failure": "request IDに対応するServerのclosed logを確認してください。",
+        "model_not_ready": "Serverのmodel load完了後にgeneration probeを再実行してください。",
+    }.get(provider_detail_code)
+    if remediation is not None:
+        print(f"Gemma生成診断の対処: {remediation}")
 
 
 def _run_provider_doctor(
@@ -176,28 +208,41 @@ def _run_provider_doctor(
     *,
     verbose: bool = False,
     development_mode: bool = False,
+    generation_probe: bool = False,
 ) -> int:
     """Print one provider-neutral, secret-free diagnostic summary."""
 
     detailed = verbose and development_mode
-    diagnostic = provider.diagnose(verbose=detailed)
+    if generation_probe:
+        diagnostic = cast(_GenerationProbeProvider, provider).diagnose(
+            verbose=detailed,
+            generation_probe=True,
+        )
+    else:
+        diagnostic = provider.diagnose(verbose=detailed)
     if diagnostic.healthy:
         print(
             f"{label}診断: OK "
             f"provider={diagnostic.provider} model={diagnostic.model}"
+            f"{' generation_probe=ready' if generation_probe else ''}"
         )
         return 0
     reason = diagnostic.reason_code.value if diagnostic.reason_code else "unknown"
     status = diagnostic.http_status if diagnostic.http_status is not None else "-"
     exception_type = diagnostic.exception_type or "-"
+    provider_detail_code = diagnostic.provider_detail_code or "-"
     print(
         f"{label}診断: NG "
         f"provider={diagnostic.provider} model={diagnostic.model} "
-        f"reason_code={reason} http_status={status} "
+        f"reason_code={reason} provider_detail_code={provider_detail_code} http_status={status} "
         f"retryable={str(diagnostic.retryable).lower()} "
         f"exception_type={exception_type}"
     )
-    _print_doctor_remediation(label, diagnostic.reason_code)
+    _print_doctor_remediation(
+        label,
+        diagnostic.reason_code,
+        diagnostic.provider_detail_code,
+    )
     if verbose and not development_mode:
         print("詳細診断はdevelopmentでのみ有効です。ALGOHINT_ENV=developmentを設定してください。")
     elif diagnostic.debug_details is not None:
@@ -225,7 +270,14 @@ def _run_gemini_doctor(
 def main(argv: Sequence[str] | None = None) -> None:
     """Assemble concrete adapters and launch the Gradio application."""
 
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if (
+        args.command == "doctor"
+        and args.generation_probe
+        and args.provider != "gemma"
+    ):
+        parser.error("--generation-probe is supported only with --provider gemma")
     config = AppConfig.from_environment(args.environment)
     if args.command == "doctor":
         if args.provider == "gemini":
@@ -246,6 +298,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             provider,
             verbose=args.verbose,
             development_mode=config.development_mode,
+            generation_probe=args.generation_probe,
         )
         if status:
             raise SystemExit(status)

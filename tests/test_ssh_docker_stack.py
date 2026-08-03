@@ -147,12 +147,13 @@ def test_stack_builds_local_and_stops_only_owned_remote(tmp_path: Path) -> None:
     doctor_call = next(
         line for line in recorded.splitlines() if " doctor --provider gemma" in line
     )
+    assert "doctor --provider gemma --generation-probe" in doctor_call
     assert doctor_call.endswith("config=")
     assert "'build'" in recorded
     assert "'start'" in recorded
     assert "'stop'" in recorded
     assert " -N -T " in f" {recorded} "
-    assert " doctor --provider gemma" in recorded
+    assert " doctor --provider gemma --generation-probe" in recorded
     assert "--name algohint-ssh-app app" in recorded
     assert "--service-ports --name algohint-ssh-app app" in recorded
     assert "--service-ports" not in doctor_call
@@ -316,7 +317,7 @@ def test_contract_failure_cleans_up_owned_remote_before_ui(tmp_path: Path) -> No
     assert "'start'" in recorded
     assert "'stop'" in recorded
     assert "--name algohint-ssh-app" not in recorded
-    assert "contract check failed" in completed.stderr
+    assert "generation readiness check failed" in completed.stderr
 
 
 def test_interrupt_during_remote_start_cleans_up_owned_container(

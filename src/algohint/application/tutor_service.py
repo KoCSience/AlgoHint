@@ -225,11 +225,12 @@ class TutorService:
             LOGGER.warning(
                 (
                     "hint_provider_fallback provider=%s model=%s reason_code=%s "
-                    "http_status=%s retryable=%s exception_type=%s"
+                    "provider_detail_code=%s http_status=%s retryable=%s exception_type=%s"
                 ),
                 failure.provider,
                 failure.model,
                 failure.reason_code.value,
+                failure.provider_detail_code,
                 failure.http_status,
                 failure.retryable,
                 failure.exception_type,

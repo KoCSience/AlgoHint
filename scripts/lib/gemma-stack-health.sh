@@ -31,8 +31,11 @@ algohint_verify_gemma_contract() {
     if algohint_requested_gemma_doctor "$@"; then
         return
     fi
-    if ! "$algohint_runner" doctor --provider gemma; then
-        echo "Gemma Server contract check failed; AlgoHint was not started." >&2
+    # A load-only health check cannot prove that device transfer, generation,
+    # decoding, and response parsing work. The doctor command performs model
+    # discovery first and runs the server-owned probe only after it succeeds.
+    if ! "$algohint_runner" doctor --provider gemma --generation-probe; then
+        echo "Gemma Server generation readiness check failed; AlgoHint was not started." >&2
         return 1
     fi
 }
@@ -62,7 +65,7 @@ algohint_monitor_gemma_health() {
             # of an external server, while the app can safely continue locally.
             echo "$failure_summary" >&2
             echo "AlgoHint remains running with RuleBased fallback." >&2
-            echo "Restart this stack and run doctor --provider gemma before retrying." >&2
+            echo "Restart this stack and run doctor --provider gemma --generation-probe before retrying." >&2
             return
         fi
     done
