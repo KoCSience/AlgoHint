@@ -323,8 +323,10 @@ tunnel_pid=$!
 wait_for_tunnel
 
 if ! algohint_requested_gemma_doctor "${app_arguments[@]}"; then
-    if ! compose run --rm --no-deps app doctor --provider gemma; then
-        echo "Gemma Server contract check failed; AlgoHint was not started." >&2
+    # The diagnostic performs model discovery before a server-owned generation
+    # probe, so learner data is never needed to validate the complete path.
+    if ! compose run --rm --no-deps app doctor --provider gemma --generation-probe; then
+        echo "Gemma Server generation readiness check failed; AlgoHint was not started." >&2
         exit 1
     fi
 fi

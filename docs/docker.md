@@ -139,7 +139,7 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 ```
 
 処理順は、資格情報・Compose検証、remote release検査・必要時導入、local image build、
-remote image build・start、SSH tunnel、ready待機、container内の認証付きdoctor、
+remote image build・start、SSH tunnel、ready待機、container内の認証付きdoctorとgeneration probe、
 AlgoHint container、health monitorです。`--build-remote`なしでreleaseが一致しない
 場合はremoteを変更せず、期待SHA、現在SHA、再実行方法を表示します。終了時はlocal
 containerとtunnelを停止し、remoteはこの起動で開始した場合だけ停止します。既存remoteを
@@ -156,6 +156,13 @@ credential helperをBuildKit sessionへ渡しません。remote build、doctor�
 host networkでは`127.0.0.1:18000`、Docker DesktopのLinux VMからは
 `host.docker.internal:18000`を使います。いずれもhostが所有する同じSSH tunnelへ接続し、
 credentials内の古いURLでは上書きできません。
+
+起動前doctorは最初に`/v1/models`を確認し、成功した場合だけserver所有の固定文を最大64
+token生成するprobeへ進みます。Docker Desktopでもprobeは
+`host.docker.internal:18000`を通るため、UI開始前にcontainerからtunnel、GPU生成、
+response解析までを検証できます。probe失敗時はUIを起動せず、このlauncherが開始した
+remote containerだけを既存cleanup規則に従って停止します。起動後の監視はGPU処理へ
+干渉しないよう、従来どおり軽量な`/healthz`だけです。
 
 native Linuxの経路はDockerのhost networkを使います。これは提出コードからhostの
 loopback serviceへ到達できる範囲も増やすため、信頼できる個人の提出コードに限定し、

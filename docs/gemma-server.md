@@ -303,15 +303,16 @@ scriptは次の順で実行します。
 4. `127.0.0.1:18000`からremote `127.0.0.1:18080`へtunnelを作る。
 5. credentials読込後も接続先を上のloopback tunnelへ固定する。
 6. 認証付き`/v1/models`でmodel IDとreadyを検査する。
-7. doctor成功後だけAlgoHintを起動し、5秒間隔でhealthを監視する。
-8. 終了時に自分が作ったtunnelとserverだけを停止する。
+7. server所有の固定promptでgeneration probeを実行する。
+8. probe成功後だけAlgoHintを起動し、5秒間隔でhealthを監視する。
+9. 終了時に自分が作ったtunnelとserverだけを停止する。
 
 ```text
 remote controller
   → remote /healthz ready待機
   → SSH tunnel
   → managed endpoint固定
-  → doctor (/v1/models)
+  → doctor (/v1/models → generation probe)
   → AlgoHint + health monitor
 ```
 
@@ -349,7 +350,7 @@ SHAとcontrollerを再検査してからbuildします。以後は`--build-remot
 ```text
 remote Docker controller (3 GPU, 127.0.0.1:18080)
   → host SSH tunnel (127.0.0.1:18000)
-  → AlgoHint Docker doctor
+  → AlgoHint Docker doctor (/v1/models → generation probe)
   → AlgoHint Docker UI (127.0.0.1:7860)
 ```
 
@@ -382,6 +383,17 @@ doctorはprompt、問題文、codeを送らず、`/v1/models`でbackend、model 
 確認します。成功時は
 `Gemma診断: OK provider=gemma model=google/gemma-4-12B-it`と表示されます。
 明示的にdoctorを指定した場合、launcher内の起動前doctorは重複実行されません。
+
+生成経路まで明示的に検査する場合は`--generation-probe`を追加します。probeはserver内の
+固定文だけを使い、learnerの問題文やcodeを送信しません。healthとmodel discoveryは
+model objectの保持を確認するだけで、device転送、`generate`、decode、response解析の
+成功を保証しないため、managed launcherはUI起動前に必ずこの形式を使用します。
+
+```bash
+ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
+  ./scripts/run-ssh-stack.sh --keep-remote doctor --provider gemma \
+  --generation-probe
+```
 
 ## Connection refusedの切り分け
 
@@ -440,8 +452,8 @@ hostのGemmaへ接続する場合、container内の`127.0.0.1`はhostを指さ�
 | `429`                                                             | 別生成中。clientのbounded retryを待つ                              |
 | `endpoint_unreachable` / `Connection refused`                     | server／tunnelのlistener不在。上の専用手順で起動経路を再構築       |
 | tunnel起動失敗                                                    | local 18000競合、SSH forwarding設定、remote 18080を確認            |
-| 起動前doctor失敗                                                  | UIは未起動。reason codeに従い認証、model ID、ready、接続経路を修正 |
-| 起動後のhealth喪失警告                                            | UIは継続中。stackを再起動してdoctor成功後にGemmaを再試行           |
+| 起動前doctor／generation probe失敗                                | UIは未起動。detail code別の案内に従い生成経路を修正                |
+| 起動後のhealth喪失警告                                            | UIは継続中。stackを再起動しprobe成功後にGemmaを再試行              |
 | `gemma-ssh-target`検証失敗                                        | 通常file、現在ユーザー所有、mode 600、alias 1行だけか確認          |
 | `ALGOHINT_SSH_TARGET is no longer supported`                      | 変数を`unset`し、`~/.config/algohint/gemma-ssh-target`へ移行       |
 | 旧接続確認の`printf ...: command not found`                       | remote成功表示の解釈失敗。`check-gemma-ssh.sh`で再確認             |
