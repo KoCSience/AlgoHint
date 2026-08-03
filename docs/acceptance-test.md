@@ -118,9 +118,12 @@
 - [ ] Docker SSH stackがremote Docker Gemma、host tunnel、local AlgoHint containerを順に起動し、container内generation probe成功後だけUIを開始する。
 - [ ] Docker SSH stackがSSH鍵をmountせず、既存remote containerを停止せず、自分が起動したremoteだけを既定cleanupする。
 - [ ] `--build-remote`が旧remote releaseを固定SHAへ導入して再検査し、flagなしではremoteを変更せず期待SHAと現在SHAを表示する。
+- [ ] 共通`stop-gemma-server-ssh.sh`がnativeのみ、Dockerのみ、停止済み、両方稼働、片方のcontrollerしかない旧releaseを安全に分類する。
+- [ ] nativeは`--install-remote`、Dockerは`--build-remote`でだけ停止済み旧releaseを更新し、別mode稼働中はmodel load／build前に共通停止案内で終了する。
 - [ ] credentials、SSHターゲット、ポート、リモートルートは環境変数で変更でき、秘密値を引数やログへ出さない。
 - [ ] SSHトンネル経由の`algohint doctor --provider gemma`が問題文やコードを送らず成功する。
 - [ ] `algohint doctor --provider gemma --generation-probe`が固定promptだけで最大64 tokenを生成し、失敗時はclosed failure codeだけを表示する。
+- [ ] model discovery 404とprobeだけの404を区別し、後者を`generation_probe_unsupported`としてresponse本文なしで案内する。
 - [ ] listener不在の`ConnectError`が`endpoint_unreachable`となり、502/503の`provider_unavailable`、timeout、401と区別される。
 - [ ] Chrome MCPからGemmaへ「わからない」を1回だけ要求し、provider/modelと生成ヒントが表示され、RuleBasedへ退避しない。
 - [ ] doctor成功後、Chrome DevTools MCPの隔離Chromeから実Geminiへ「わからない」を1回だけ要求する。

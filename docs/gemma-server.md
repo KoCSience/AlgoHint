@@ -270,13 +270,16 @@ app_root="$HOME/programs/algohint-gemma-server"
 stopping/stoppedをclosed metadataだけで記録します。controllerはPIDの所有者、
 Python module、作業directoryを検証した場合だけsignalを送ります。
 
-**実行場所: GPU host**
+通常の停止とmode切替は、GPU host内のcontroller pathを直接選ばず、AlgoHint hostの
+共通コマンドを使います。これにより、nativeとDockerの所有controllerを取り違えません。
 
 ```bash
-"$app_root/current/scripts/server-control.sh" logs
-"$app_root/current/scripts/server-control.sh" logs --follow
-"$app_root/current/scripts/server-control.sh" stop
+./scripts/stop-gemma-server-ssh.sh --status
+./scripts/stop-gemma-server-ssh.sh
 ```
+
+GPU hostでの`server-control.sh logs`と`attach`は追加診断用です。停止、release切替、
+mode切替の主要な復旧導線には使いません。
 
 詳細はstandaloneの
 [Operations](https://github.com/KoCSience/AlgoHint-Gemma-Server/blob/main/docs/operations.md)
@@ -297,18 +300,22 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 
 scriptは次の順で実行します。
 
-1. remote controllerが実行可能か検査する。
-2. 既存serverがなければstartする。
-3. remote host内でhealthがreadyになるまでbounded waitする。
-4. `127.0.0.1:18000`からremote `127.0.0.1:18080`へtunnelを作る。
-5. credentials読込後も接続先を上のloopback tunnelへ固定する。
-6. 認証付き`/v1/models`でmodel IDとreadyを検査する。
-7. server所有の固定promptでgeneration probeを実行する。
-8. probe成功後だけAlgoHintを起動し、5秒間隔でhealthを監視する。
-9. 終了時に自分が作ったtunnelとserverだけを停止する。
+1. manifestの固定SHA、remote `current/RELEASE`、両runtimeの状態を検査する。
+2. `--install-remote`指定時だけ、停止済みの旧releaseを固定SHAへ更新して再検査する。
+3. Docker runtimeが停止中でnative controllerが実行可能なことを検査する。
+4. 既存serverがなければstartする。
+5. remote host内でhealthがreadyになるまでbounded waitする。
+6. `127.0.0.1:18000`からremote `127.0.0.1:18080`へtunnelを作る。
+7. credentials読込後も接続先を上のloopback tunnelへ固定する。
+8. 認証付き`/v1/models`でmodel IDとreadyを検査する。
+9. server所有の固定promptでgeneration probeを実行する。
+10. probe成功後だけAlgoHintを起動し、5秒間隔でhealthを監視する。
+11. 終了時に自分が作ったtunnelとserverだけを停止する。
 
 ```text
-remote controller
+共通status／stop command
+  → pinned release確認・必要時導入
+  → native controller
   → remote /healthz ready待機
   → SSH tunnel
   → managed endpoint固定
@@ -329,6 +336,8 @@ launcherは1本のSSH session内でremote healthを待つことでこの表示�
 既定timeoutは初回model取得を考慮して900秒です。
 
 remote Gemmaを維持する場合は`--keep-remote`を指定します。
+旧releaseが停止済みの場合だけ、`--install-remote`を指定すると固定releaseを導入できます。
+実行中なら共通停止コマンドを案内して終了し、自動停止はしません。
 
 ### AlgoHintとGemmaの両方をDockerで起動
 
@@ -343,8 +352,8 @@ ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
 `--build-remote`はremote `current/RELEASE`が固定SHAと異なる場合、既存installerを実行し、
 SHAとcontrollerを再検査してからbuildします。以後は`--build-remote`を外します。この経路はremote
 `current/scripts/docker-control.sh`の安定した`container: running|not-running`状態を
-使って所有権を判定します。native tmux Gemmaとの同時起動はremote controller側で
-拒否されます。SSH鍵はhostだけが使用し、containerにはAPI利用に必要なGemma keyだけを
+使って所有権を判定します。native tmux Gemmaとの同時起動はbuild前の共通preflightで
+拒否され、停止には`./scripts/stop-gemma-server-ssh.sh`を使います。SSH鍵はhostだけが使用し、containerにはAPI利用に必要なGemma keyだけを
 環境変数として渡します。
 
 ```text

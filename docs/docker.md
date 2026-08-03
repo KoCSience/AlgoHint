@@ -126,6 +126,17 @@ agent socketはcontainerへ渡しません。
 `--build-remote`はremote releaseが古い、またはDocker controllerがない場合にmanifestの
 固定SHAを導入し、その結果を再検査してからremote imageを構築します。
 
+native／Dockerの状態確認と停止は共通です。release更新またはmode切替の前に、AlgoHint
+hostのrepository rootで実行します。
+
+```bash
+./scripts/stop-gemma-server-ssh.sh --status
+./scripts/stop-gemma-server-ssh.sh
+```
+
+launcherは別modeのruntimeを検出するとbuildやstartを行わず、このコマンドを案内します。
+両runtimeを無断停止することはありません。
+
 ```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-docker-stack.sh --build-remote
@@ -146,6 +157,9 @@ containerとtunnelを停止し、remoteはこの起動で開始した場合だ�
 残す規則を変えず、新規remoteも残したい場合は
 `--keep-remote`を使います。local sourceに変更がなく既存imageを使う場合だけ
 `--no-build-local`を指定できます。
+
+シェルで複数行へ分ける場合、行継続文字`\`は行末の最後の文字にしてください。`\`の
+後ろに空白があると次行が同じコマンドへ連結されません。
 
 local image buildのbase imageは公開かつdigest固定です。このbuildだけは
 `config/public-docker-client/config.json`の空設定を使用し、個人のregistry credentialや

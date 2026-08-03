@@ -224,6 +224,13 @@ docker volume inspect algohint-runtime
 remote Docker Gemmaまで含む最終確認は、固定SHA release導入後に次で行います。
 
 ```bash
+./scripts/stop-gemma-server-ssh.sh --status
+./scripts/stop-gemma-server-ssh.sh
+```
+
+nativeまたは古いDocker runtimeが残っていないことを確認してから起動します。
+
+```bash
 ALGOHINT_CREDENTIALS="$HOME/.config/algohint/gemma-remote-credentials" \
   ./scripts/run-ssh-docker-stack.sh --no-build-local
 ```

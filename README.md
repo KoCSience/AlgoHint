@@ -146,6 +146,18 @@ local imageの再構築も省略する場合だけ
 `--no-build-local`を指定します。構造・前提・所有processのcleanupは
 [Docker運用ガイド](docs/docker.md#remote-docker-gemmaとの一括起動)を参照してください。
 
+remote Gemmaの状態確認、停止、native／Dockerの切替は起動方式にかかわらずAlgoHint
+hostから同じコマンドを使います。launcherやinstallerは実行中runtimeを無断停止しません。
+
+```bash
+./scripts/stop-gemma-server-ssh.sh --status
+./scripts/stop-gemma-server-ssh.sh
+```
+
+両runtimeが同時に検出された異常状態では自動選択せず、状態を確認してから`--mode native`、
+`--mode docker`、または明示的な`--all`を指定します。複数行コマンドの行継続文字`\`の
+後ろには空白を置かないでください。
+
 ## ホストで起動
 
 ```bash
