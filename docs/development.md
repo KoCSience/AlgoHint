@@ -220,8 +220,9 @@ Vertex AI／Enterpriseのアクセストークン認証へ切り替えません�
 | `client_lifecycle_error` | SDKクライアントが通信完了前に閉じられた | 依存ロックを確認し、再現時はバグとして報告する |
 | `unknown_provider_error` | 上記以外 | development詳細診断でSDK例外を確認する |
 
-productionログにはprovider、model、reason_code、HTTPステータス、再試行可能性、
-例外クラスだけを記録します。APIキー、プロンプト、コード、生レスポンスは記録しません。
+productionログにはprovider、model、reason_code、検証済みprovider detail code、
+HTTPステータス、再試行可能性、例外クラスだけを記録します。APIキー、プロンプト、
+コード、生レスポンスは記録しません。
 429と5xxの再試行はGoogle SDKへ任せ、AlgoHintから重複して再試行しません。
 
 開発中に原因を詳しく確認する場合は、次を実行します。
@@ -277,10 +278,21 @@ listenerとhost network、資格情報権限、固定releaseの導入・再検�
 `container: running|not-running`契約、既存remoteの非所有、doctor失敗時cleanupを
 `test_ssh_docker_stack.py`で検証します。
 
-doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
+通常doctorは`/v1/models`だけを呼び、問題文、提出コード、質問、履歴を送りません。
 成功時は設定したbackend、deployment、modelを表示します。`transformers_http`を
 選択した場合、`ALGOHINT_GEMMA_API_KEY`は必須です。`remote`を明示すると、
 SSHトンネルのURLが`127.0.0.1`でもUIで外部送信同意を要求します。
+
+実生成経路まで確認する場合は、Gemmaだけに明示的なprobeを指定します。
+
+```bash
+uv run algohint doctor --provider gemma --generation-probe
+```
+
+probeはbodyを送らず、Gemma Serverが所有する固定textだけを最大64 token生成します。
+`502`/`503`のresponseは`extra=forbid`のclosed schemaで検証し、既知codeだけを
+`provider_detail_code`として表示します。不正JSON、未知code、余分なfield、HTMLは
+本文を破棄して`unknown_generation_failure`へ閉じます。
 
 | 用途                  | 環境変数                                      | 秘密               |
 | --------------------- | --------------------------------------------- | ------------------ |
@@ -299,9 +311,11 @@ SSHトンネルのURLが`127.0.0.1`でもUIで外部送信同意を要求しま�
 キーとクラウド送信への同意は保存されません。
 
 `endpoint_unreachable`はHTTP応答前の接続失敗を表します。`provider_unavailable`は
-ready=false、HTTP 502/503、または接続後のtransport障害に使用します。この区別により、
-前者はserver/tunnelの起動確認、後者はserver状態確認や一時待機へ誘導します。生成POSTは
-自動再送せず、失敗した操作だけをRuleBasedへfallbackします。
+ready=false、HTTP 502/503、または接続後のtransport障害に使用します。Gemma Serverの
+closed detail codeがある場合はGPU memory、CUDA、device placement、parserを追加で
+区別します。この区別により、前者はserver/tunnelの起動確認、後者はgeneration probeと
+server状態確認へ誘導します。生成POSTは自動再送せず、失敗した操作だけをRuleBasedへ
+fallbackします。
 
 ### この形式の理由
 

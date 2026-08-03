@@ -10,6 +10,7 @@ from algohint.domain.enums import (
     CodeReviewCategory,
     CompletionReason,
     GemmaDeployment,
+    GemmaGenerationFailureCode,
     HintCategory,
     HintTrigger,
     PersonalizedQuizMode,
@@ -328,6 +329,40 @@ def test_doctor_uses_only_model_discovery(
     assert all(client.is_closed for client in clients)
 
 
+def test_doctor_generation_probe_runs_after_model_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": MODEL,
+                            "revision": "pinned",
+                            "backend": "transformers",
+                            "ready": True,
+                        }
+                    ]
+                },
+            )
+        assert request.content == b""
+        return httpx.Response(200, json={"model": MODEL, "ready": True})
+
+    provider, clients = provider_with_handler(handler)
+
+    diagnostic = provider.diagnose(generation_probe=True)
+
+    assert diagnostic.healthy
+    assert paths == ["/v1/models", "/v1/diagnostics/generation"]
+    assert all(client.is_closed for client in clients)
+
+
 @pytest.mark.parametrize(
     ("status_code", "reason", "retryable"),
     [
@@ -338,8 +373,8 @@ def test_doctor_uses_only_model_discovery(
         (413, ProviderFailureReason.INVALID_REQUEST, False),
         (422, ProviderFailureReason.INVALID_REQUEST, False),
         (429, ProviderFailureReason.RATE_OR_QUOTA_EXCEEDED, True),
-        (502, ProviderFailureReason.PROVIDER_UNAVAILABLE, True),
-        (503, ProviderFailureReason.PROVIDER_UNAVAILABLE, True),
+        (502, ProviderFailureReason.PROVIDER_UNAVAILABLE, False),
+        (503, ProviderFailureReason.PROVIDER_UNAVAILABLE, False),
         (504, ProviderFailureReason.TIMEOUT, True),
     ],
 )
@@ -365,7 +400,123 @@ def test_classifies_http_failures(
     assert raised.value.reason_code is reason
     assert raised.value.http_status == status_code
     assert raised.value.retryable is retryable
+    if status_code in {502, 503}:
+        assert (
+            raised.value.provider_detail_code
+            == GemmaGenerationFailureCode.UNKNOWN_GENERATION_FAILURE.value
+        )
     assert "private raw server response" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("code", "status_code", "reason", "retryable"),
+    [
+        (
+            "model_not_ready",
+            503,
+            ProviderFailureReason.PROVIDER_UNAVAILABLE,
+            True,
+        ),
+        (
+            "gpu_memory_exhausted",
+            503,
+            ProviderFailureReason.PROVIDER_UNAVAILABLE,
+            False,
+        ),
+        (
+            "cuda_runtime_failure",
+            503,
+            ProviderFailureReason.PROVIDER_UNAVAILABLE,
+            False,
+        ),
+        (
+            "device_placement_failure",
+            503,
+            ProviderFailureReason.PROVIDER_UNAVAILABLE,
+            False,
+        ),
+        (
+            "response_parsing_failure",
+            502,
+            ProviderFailureReason.INVALID_STRUCTURED_RESPONSE,
+            False,
+        ),
+    ],
+)
+def test_validates_closed_server_generation_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+    status_code: int,
+    reason: ProviderFailureReason,
+    retryable: bool,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code,
+            json={
+                "error": {
+                    "code": code,
+                    "retryable": retryable,
+                    "request_id": "a" * 32,
+                }
+            },
+        )
+
+    provider, _ = provider_with_handler(handler)
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert raised.value.reason_code is reason
+    assert raised.value.provider_detail_code == code
+    assert raised.value.retryable is retryable
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(503, text="private html response"),
+        httpx.Response(
+            503,
+            json={
+                "error": {
+                    "code": "private_unknown_code",
+                    "retryable": True,
+                    "request_id": "a" * 32,
+                }
+            },
+        ),
+        httpx.Response(
+            503,
+            json={
+                "error": {
+                    "code": "cuda_runtime_failure",
+                    "retryable": False,
+                    "request_id": "a" * 32,
+                    "private_extra": "must be rejected",
+                }
+            },
+        ),
+    ],
+)
+def test_discards_malformed_or_unknown_server_failure_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+    response: httpx.Response,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    provider, _ = provider_with_handler(lambda request: response)
+
+    with pytest.raises(HintProviderError) as raised:
+        provider.generate(make_request())
+
+    assert (
+        raised.value.provider_detail_code
+        == GemmaGenerationFailureCode.UNKNOWN_GENERATION_FAILURE.value
+    )
+    assert not raised.value.retryable
+    assert "private" not in str(raised.value)
 
 
 def test_invalid_response_is_classified_without_exposing_content(

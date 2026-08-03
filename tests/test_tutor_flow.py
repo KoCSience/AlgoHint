@@ -199,6 +199,7 @@ def test_classified_provider_failure_reaches_fallback_without_sensitive_logs(
             model="gemini-3.6-flash",
             http_status=403,
             exception_type="ClientError",
+            provider_detail_code="device_placement_failure",
         )
     )
     tutor, profile_id, _, _ = make_tutor(tmp_path, provider)
@@ -217,5 +218,6 @@ def test_classified_provider_failure_reaches_fallback_without_sensitive_logs(
     assert "provider=gemini" in log_text
     assert "model=gemini-3.6-flash" in log_text
     assert "reason_code=authentication_or_permission" in log_text
+    assert "provider_detail_code=device_placement_failure" in log_text
     assert "http_status=403" in log_text
     assert "private-source-marker" not in log_text

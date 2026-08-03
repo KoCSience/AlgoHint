@@ -12,7 +12,11 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from algohint.domain.enums import GemmaDeployment, ProviderFailureReason
+from algohint.domain.enums import (
+    GemmaDeployment,
+    GemmaGenerationFailureCode,
+    ProviderFailureReason,
+)
 from algohint.domain.errors import HintProviderError
 from algohint.domain.models import (
     CodeReviewRequest,
@@ -91,6 +95,21 @@ class _ModelInfo(_ResponseModel):
 
 class _ModelsResponse(_ResponseModel):
     data: tuple[_ModelInfo, ...]
+
+
+class _GenerationDiagnosticResponse(_ResponseModel):
+    model: str
+    ready: bool
+
+
+class _GenerationErrorDetail(_ResponseModel):
+    code: GemmaGenerationFailureCode
+    retryable: bool
+    request_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+class _GenerationErrorResponse(_ResponseModel):
+    error: _GenerationErrorDetail
 
 
 class TransformersHttpHintProvider:
@@ -265,8 +284,13 @@ class TransformersHttpHintProvider:
             self._log_development_exception("quizzes", error)
             raise self._classified_error(error) from error
 
-    def diagnose(self, *, verbose: bool = False) -> ProviderDiagnostic:
-        """Check auth, endpoint, model, and readiness without learner content."""
+    def diagnose(
+        self,
+        *,
+        verbose: bool = False,
+        generation_probe: bool = False,
+    ) -> ProviderDiagnostic:
+        """Check the contract and optionally generate with server-owned text."""
 
         availability = self.availability()
         if not availability.available:
@@ -284,6 +308,16 @@ class TransformersHttpHintProvider:
                 )
                 response.raise_for_status()
                 models = _ModelsResponse.model_validate(response.json())
+                if generation_probe:
+                    probe_response = client.post(
+                        f"{self._base_url}/diagnostics/generation",
+                        headers=self._headers(),
+                        content=b"",
+                    )
+                    probe_response.raise_for_status()
+                    probe = _GenerationDiagnosticResponse.model_validate(
+                        probe_response.json()
+                    )
         except Exception as error:
             classified = (
                 error if isinstance(error, HintProviderError) else self._classified_error(error)
@@ -297,6 +331,7 @@ class TransformersHttpHintProvider:
                 http_status=classified.http_status,
                 retryable=classified.retryable,
                 exception_type=classified.exception_type,
+                provider_detail_code=classified.provider_detail_code,
                 debug_details=debug_details,
             )
         matched = next((item for item in models.data if item.id == self._model), None)
@@ -315,6 +350,16 @@ class TransformersHttpHintProvider:
                 reason_code=ProviderFailureReason.PROVIDER_UNAVAILABLE,
                 retryable=True,
             )
+        if generation_probe and (not probe.ready or probe.model != self._model):
+            return ProviderDiagnostic(
+                healthy=False,
+                provider="gemma",
+                model=self._model,
+                reason_code=ProviderFailureReason.INVALID_STRUCTURED_RESPONSE,
+                provider_detail_code=(
+                    GemmaGenerationFailureCode.RESPONSE_PARSING_FAILURE.value
+                ),
+            )
         return ProviderDiagnostic(healthy=True, provider="gemma", model=self._model)
 
     def _classified_error(self, error: Exception) -> HintProviderError:
@@ -328,6 +373,16 @@ class TransformersHttpHintProvider:
         if isinstance(error, httpx.HTTPStatusError):
             status_code = error.response.status_code
             reason_code, retryable = self._classify_http_status(status_code)
+            provider_detail_code: str | None = None
+            if status_code in {502, 503}:
+                server_failure = self._validated_server_failure(error.response)
+                provider_detail_code = server_failure.code.value
+                retryable = server_failure.retryable
+                if (
+                    server_failure.code
+                    is GemmaGenerationFailureCode.RESPONSE_PARSING_FAILURE
+                ):
+                    reason_code = ProviderFailureReason.INVALID_STRUCTURED_RESPONSE
             return HintProviderError(
                 reason_code=reason_code,
                 provider="gemma",
@@ -335,6 +390,7 @@ class TransformersHttpHintProvider:
                 http_status=status_code,
                 retryable=retryable,
                 exception_type=error.__class__.__name__,
+                provider_detail_code=provider_detail_code,
             )
         if isinstance(error, (httpx.TimeoutException, TimeoutError)):
             return self._response_error(
@@ -365,6 +421,21 @@ class TransformersHttpHintProvider:
                 error,
             )
         return self._response_error(ProviderFailureReason.UNKNOWN_PROVIDER_ERROR, error)
+
+    @staticmethod
+    def _validated_server_failure(
+        response: httpx.Response,
+    ) -> _GenerationErrorDetail:
+        """Accept only the closed schema and discard every arbitrary body."""
+
+        try:
+            return _GenerationErrorResponse.model_validate(response.json()).error
+        except (ValidationError, ValueError):
+            return _GenerationErrorDetail(
+                code=GemmaGenerationFailureCode.UNKNOWN_GENERATION_FAILURE,
+                retryable=False,
+                request_id="0" * 32,
+            )
 
     @staticmethod
     def _classify_http_status(

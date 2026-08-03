@@ -34,6 +34,21 @@ class FixedDiagnosticProvider:
         return self._diagnostic
 
 
+class ProbeDiagnosticProvider(FixedDiagnosticProvider):
+    """Record the explicit generation probe without accepting learner content."""
+
+    generation_probe = False
+
+    def diagnose(
+        self,
+        *,
+        verbose: bool = False,
+        generation_probe: bool = False,
+    ) -> ProviderDiagnostic:
+        self.generation_probe = generation_probe
+        return self._diagnostic
+
+
 def test_doctor_parser_requires_supported_provider() -> None:
     args = _parser().parse_args(["doctor", "--provider", "gemini", "--verbose"])
 
@@ -43,6 +58,65 @@ def test_doctor_parser_requires_supported_provider() -> None:
 
     gemma = _parser().parse_args(["doctor", "--provider", "gemma"])
     assert gemma.provider == "gemma"
+    assert not gemma.generation_probe
+
+
+def test_generation_probe_is_rejected_for_non_gemma_provider() -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.main(
+            ["doctor", "--provider", "gemini", "--generation-probe"]
+        )
+
+    assert raised.value.code == 2
+
+
+def test_gemma_doctor_reports_generation_probe_success(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    provider = ProbeDiagnosticProvider(
+        ProviderDiagnostic(
+            healthy=True,
+            provider="gemma",
+            model="google/gemma-4-12B-it",
+        )
+    )
+
+    status = _run_provider_doctor(
+        "Gemma",
+        provider,
+        generation_probe=True,
+    )
+
+    assert status == 0
+    assert provider.generation_probe
+    assert "generation_probe=ready" in capsys.readouterr().out
+
+
+def test_gemma_doctor_reports_closed_generation_remediation(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    provider = ProbeDiagnosticProvider(
+        ProviderDiagnostic(
+            healthy=False,
+            provider="gemma",
+            model="google/gemma-4-12B-it",
+            reason_code=ProviderFailureReason.PROVIDER_UNAVAILABLE,
+            provider_detail_code="device_placement_failure",
+            http_status=503,
+            exception_type="HTTPStatusError",
+        )
+    )
+
+    status = _run_provider_doctor(
+        "Gemma",
+        provider,
+        generation_probe=True,
+    )
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "provider_detail_code=device_placement_failure" in output
+    assert "固定Server releaseとdevice map" in output
 
 
 def test_gemini_doctor_succeeds_without_generation(
