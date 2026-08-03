@@ -43,6 +43,7 @@ from algohint.infrastructure.personalized_quiz_prompt import (
 )
 
 LOGGER = logging.getLogger(__name__)
+GENERATION_PROBE_UNSUPPORTED = "generation_probe_unsupported"
 SINGLE_JSON_FENCE = re.compile(
     r"\A```(?:json)?[ \t]*\r?\n(?P<body>.*?)\r?\n```[ \t]*\Z",
     flags=re.IGNORECASE | re.DOTALL,
@@ -308,32 +309,8 @@ class TransformersHttpHintProvider:
                 )
                 response.raise_for_status()
                 models = _ModelsResponse.model_validate(response.json())
-                if generation_probe:
-                    probe_response = client.post(
-                        f"{self._base_url}/diagnostics/generation",
-                        headers=self._headers(),
-                        content=b"",
-                    )
-                    probe_response.raise_for_status()
-                    probe = _GenerationDiagnosticResponse.model_validate(
-                        probe_response.json()
-                    )
         except Exception as error:
-            classified = (
-                error if isinstance(error, HintProviderError) else self._classified_error(error)
-            )
-            debug_details = self._development_details(error) if verbose else None
-            return ProviderDiagnostic(
-                healthy=False,
-                provider=classified.provider,
-                model=classified.model,
-                reason_code=classified.reason_code,
-                http_status=classified.http_status,
-                retryable=classified.retryable,
-                exception_type=classified.exception_type,
-                provider_detail_code=classified.provider_detail_code,
-                debug_details=debug_details,
-            )
+            return self._failed_diagnostic(error, verbose=verbose)
         matched = next((item for item in models.data if item.id == self._model), None)
         if matched is None:
             return ProviderDiagnostic(
@@ -350,7 +327,26 @@ class TransformersHttpHintProvider:
                 reason_code=ProviderFailureReason.PROVIDER_UNAVAILABLE,
                 retryable=True,
             )
-        if generation_probe and (not probe.ready or probe.model != self._model):
+        if not generation_probe:
+            return ProviderDiagnostic(healthy=True, provider="gemma", model=self._model)
+        try:
+            with self._managed_client() as client:
+                probe_response = client.post(
+                    f"{self._base_url}/diagnostics/generation",
+                    headers=self._headers(),
+                    content=b"",
+                )
+                probe_response.raise_for_status()
+                probe = _GenerationDiagnosticResponse.model_validate(
+                    probe_response.json()
+                )
+        except Exception as error:
+            return self._failed_diagnostic(
+                error,
+                verbose=verbose,
+                generation_probe=True,
+            )
+        if not probe.ready or probe.model != self._model:
             return ProviderDiagnostic(
                 healthy=False,
                 provider="gemma",
@@ -361,6 +357,50 @@ class TransformersHttpHintProvider:
                 ),
             )
         return ProviderDiagnostic(healthy=True, provider="gemma", model=self._model)
+
+    def _failed_diagnostic(
+        self,
+        error: Exception,
+        *,
+        verbose: bool,
+        generation_probe: bool = False,
+    ) -> ProviderDiagnostic:
+        """Build a safe diagnostic while retaining the failed operation's meaning."""
+
+        if (
+            generation_probe
+            and isinstance(error, httpx.HTTPStatusError)
+            and error.response.status_code == 404
+        ):
+            # A successful model discovery followed by this 404 means the
+            # pinned diagnostic contract is absent, not that the model vanished.
+            classified = HintProviderError(
+                reason_code=ProviderFailureReason.PROVIDER_UNAVAILABLE,
+                provider="gemma",
+                model=self._model,
+                http_status=404,
+                retryable=False,
+                exception_type=error.__class__.__name__,
+                provider_detail_code=GENERATION_PROBE_UNSUPPORTED,
+            )
+        else:
+            classified = (
+                error
+                if isinstance(error, HintProviderError)
+                else self._classified_error(error)
+            )
+        debug_details = self._development_details(error) if verbose else None
+        return ProviderDiagnostic(
+            healthy=False,
+            provider=classified.provider,
+            model=classified.model,
+            reason_code=classified.reason_code,
+            http_status=classified.http_status,
+            retryable=classified.retryable,
+            exception_type=classified.exception_type,
+            provider_detail_code=classified.provider_detail_code,
+            debug_details=debug_details,
+        )
 
     def _classified_error(self, error: Exception) -> HintProviderError:
         """Separate connection-path failures from HTTP service responses.

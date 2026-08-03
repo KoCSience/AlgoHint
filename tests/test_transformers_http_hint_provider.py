@@ -363,6 +363,63 @@ def test_doctor_generation_probe_runs_after_model_discovery(
     assert all(client.is_closed for client in clients)
 
 
+def test_doctor_classifies_probe_only_404_as_unsupported_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": MODEL,
+                            "revision": "obsolete-release",
+                            "backend": "transformers",
+                            "ready": True,
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404, text="private-arbitrary-response-marker")
+
+    provider, _ = provider_with_handler(handler, development_mode=True)
+
+    diagnostic = provider.diagnose(generation_probe=True, verbose=True)
+
+    assert not diagnostic.healthy
+    assert diagnostic.reason_code is ProviderFailureReason.PROVIDER_UNAVAILABLE
+    assert diagnostic.provider_detail_code == "generation_probe_unsupported"
+    assert diagnostic.http_status == 404
+    assert not diagnostic.retryable
+    assert diagnostic.debug_details is not None
+    assert "private-arbitrary-response-marker" not in diagnostic.debug_details
+    assert API_KEY not in diagnostic.debug_details
+    assert paths == ["/v1/models", "/v1/diagnostics/generation"]
+
+
+def test_doctor_does_not_probe_when_discovered_model_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALGOHINT_GEMMA_API_KEY", API_KEY)
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"data": []})
+
+    provider, _ = provider_with_handler(handler)
+
+    diagnostic = provider.diagnose(generation_probe=True)
+
+    assert diagnostic.reason_code is ProviderFailureReason.MODEL_NOT_FOUND
+    assert paths == ["/v1/models"]
+
+
 @pytest.mark.parametrize(
     ("status_code", "reason", "retryable"),
     [

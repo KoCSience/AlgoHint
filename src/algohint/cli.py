@@ -197,6 +197,11 @@ def _print_doctor_remediation(
         "response_parsing_failure": "model revisionとTransformers parserの互換性を確認してください。",
         "unknown_generation_failure": "request IDに対応するServerのclosed logを確認してください。",
         "model_not_ready": "Serverのmodel load完了後にgeneration probeを再実行してください。",
+        "generation_probe_unsupported": (
+            "固定releaseより古いGemma Serverにはgeneration probe APIがありません。\n"
+            "./scripts/stop-gemma-server-ssh.sh を実行してから、使用するlauncherの"
+            "更新flagで固定releaseを導入してください。"
+        ),
     }.get(provider_detail_code)
     if remediation is not None:
         print(f"Gemma生成診断の対処: {remediation}")

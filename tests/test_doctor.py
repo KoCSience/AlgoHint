@@ -119,6 +119,31 @@ def test_gemma_doctor_reports_closed_generation_remediation(
     assert "固定Server releaseとdevice map" in output
 
 
+def test_gemma_doctor_reports_probe_upgrade_without_raw_response(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    provider = ProbeDiagnosticProvider(
+        ProviderDiagnostic(
+            healthy=False,
+            provider="gemma",
+            model="google/gemma-4-12B-it",
+            reason_code=ProviderFailureReason.PROVIDER_UNAVAILABLE,
+            provider_detail_code="generation_probe_unsupported",
+            http_status=404,
+            retryable=False,
+            exception_type="HTTPStatusError",
+        )
+    )
+
+    status = _run_provider_doctor("Gemma", provider, generation_probe=True)
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "provider_detail_code=generation_probe_unsupported" in output
+    assert "./scripts/stop-gemma-server-ssh.sh" in output
+    assert "更新flagで固定release" in output
+
+
 def test_gemini_doctor_succeeds_without_generation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
