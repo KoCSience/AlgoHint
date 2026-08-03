@@ -8,6 +8,8 @@ manifest="$project_root/config/gemma-server-release.conf"
 remote_bootstrap="$project_root/scripts/bootstrap-gemma-server-remote.sh"
 # shellcheck source=scripts/lib/gemma-ssh-target.sh
 . "$project_root/scripts/lib/gemma-ssh-target.sh"
+# shellcheck source=scripts/lib/gemma-ssh-runtime.sh
+. "$project_root/scripts/lib/gemma-ssh-runtime.sh"
 ssh_target="$(algohint_read_gemma_ssh_target)"
 
 if ! command -v ssh >/dev/null 2>&1; then
@@ -43,6 +45,24 @@ for path_name in install_root source_cache; do
         exit 2
     fi
 done
+
+# Installing a fixed release changes the shared `current` pointer. Require the
+# operator to stop the owning runtime explicitly instead of letting deployment
+# infer ownership from the launch mode that happened to invoke this script.
+if ! algohint_refresh_remote_runtime_state "$ssh_target" "$install_root"; then
+    echo "Could not inspect the remote Gemma release and runtime state." >&2
+    exit 2
+fi
+if [[ "$ALGOHINT_REMOTE_NATIVE_STATE" == "unknown" ||
+    "$ALGOHINT_REMOTE_DOCKER_STATE" == "unknown" ]]; then
+    echo "A remote Gemma controller returned an ambiguous state." >&2
+    exit 2
+fi
+if [[ "$ALGOHINT_REMOTE_NATIVE_STATE" == "running" ||
+    "$ALGOHINT_REMOTE_DOCKER_STATE" == "running" ]]; then
+    algohint_print_remote_stop_guidance
+    exit 2
+fi
 
 quote_remote() {
     local value="${1//\'/\'\\\'\'}"

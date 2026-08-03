@@ -107,8 +107,10 @@ def test_all_launchers_parse_as_bash() -> None:
         SCRIPTS / "bootstrap-gemma-server-remote.sh",
         SCRIPTS / "check-gemma-ssh.sh",
         SCRIPTS / "install-gemma-server-ssh.sh",
+        SCRIPTS / "stop-gemma-server-ssh.sh",
         SCRIPTS / "sync-gemma-credentials-ssh.sh",
         SCRIPTS / "lib" / "gemma-stack-health.sh",
+        SCRIPTS / "lib" / "gemma-ssh-runtime.sh",
         SCRIPTS / "lib" / "gemma-ssh-target.sh",
     ]
     result = subprocess.run(

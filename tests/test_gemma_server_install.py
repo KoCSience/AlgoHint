@@ -109,7 +109,9 @@ def test_local_installer_sends_reviewed_bootstrap_and_pinned_values(
     write_executable(
         fake_bin / "ssh",
         'printf "%s\\n" "$*" >> "$TEST_SSH_LOG"\n'
-        'if [[ "$*" != *"bash -s --"* ]]; then\n'
+        'if [[ "$*" == *"bash -s -- \'/remote/tester/programs/algohint-gemma-server\'"* ]]; then\n'
+        '  printf "release=missing\\nnative=missing\\ndocker=missing\\nhealth=unavailable\\n"\n'
+        'elif [[ "$*" != *"bash -s --"* ]]; then\n'
         '  printf "/remote/tester\\n"\n'
         "else\n"
         '  cp /dev/stdin "$TEST_STDIN_COPY"\n'
@@ -147,6 +149,43 @@ def test_local_installer_sends_reviewed_bootstrap_and_pinned_values(
     assert "/remote/tester/programs/algohint-gemma-server" in calls
     assert stdin_copy.read_bytes() == REMOTE_BOOTSTRAP.read_bytes()
     assert "release installed" in completed.stdout
+
+
+def test_local_installer_refuses_active_runtime_with_common_guidance(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    ssh_log = tmp_path / "ssh.log"
+    local_home = tmp_path / "local-home"
+    local_home.mkdir()
+    write_ssh_target(local_home)
+    write_executable(
+        fake_bin / "ssh",
+        'printf "%s\\n" "$*" >> "$TEST_SSH_LOG"\n'
+        'if [[ "$*" == *"bash -s -- \'/remote/tester/programs/algohint-gemma-server\'"* ]]; then\n'
+        '  printf "release=%040d\\nnative=stopped\\ndocker=running\\nhealth=ready\\n" 0\n'
+        "else\n"
+        '  printf "/remote/tester\\n"\n'
+        "fi\n",
+    )
+    environment = {
+        **os.environ,
+        "HOME": str(local_home),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "TEST_SSH_LOG": str(ssh_log),
+    }
+
+    completed = subprocess.run(
+        [str(LOCAL_INSTALLER)],
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "./scripts/stop-gemma-server-ssh.sh" in completed.stderr
+    assert "Pinned Gemma Server release installed" not in completed.stdout
 
 
 def test_remote_bootstrap_uses_exact_commit_in_temporary_worktree(
